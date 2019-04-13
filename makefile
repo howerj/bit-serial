@@ -1,19 +1,24 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O2
-.PHONY: all run simulate clean
+.PHONY: all run simulate viewer clean
 
-all: bit tb
+all: bit simulate
 
 run: bit bit.hex
-	./bit bit.hex
+	./bit h bit.hex
 
-simulate: tb
-	./tb
+simulate: tb.ghw
+
+viewer: tb.ghw
+	gtkwave -f $< &> /dev/null&
+
+clean:
+	rm -fv *.cf *.o *.ghw tb bit
 
 bit: bit.c
 	${CC} ${CFLAGS} $< -o $@
 
-tb.o: tb.vhd
+tb.o: tb.vhd bit.o
 	ghdl -a -g $<
 
 bit.o: bit.vhd
@@ -22,5 +27,7 @@ bit.o: bit.vhd
 tb: tb.o bit.o
 	ghdl -e tb
 
-clean:
-	rm -fv *.cf *.o tb bit
+tb.ghw: tb bit.hex
+	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable
+
+

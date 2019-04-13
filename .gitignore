@@ -2,3 +2,4 @@ bit
 tb
 *.cf
 *.o
+*.ghw

@@ -20,7 +20,8 @@ a lot slower.
 
 * Implement Memory mapped I/O in VHDL and in simulator
 * Fill up instruction set (which instructions arithmetic instructions are optimal/easy to implement?)
-* Implement in VHDL (along with a bit-parallel alternative)
+* Implement in VHDL (along with a bit-parallel alternative - use the parallel
+  version to test the equivalence with the bit-serial version)
 * Document system (instruction set tables, and state machine diagrams, cycle timing)
 * Make an assembler
 * Port a simple, very cut down, Forth

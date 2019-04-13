@@ -28,7 +28,8 @@ architecture rtl of bcpu is
 	signal done_c,  done_n:  std_ulogic := '0';
 	signal dline_c, dline_n: std_ulogic_vector(N     downto 0) := (others => '0');
 	signal acc_c,   acc_n:   std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal pc_c,    pc_n:    std_ulogic_vector(N - 5 downto 0) := (others => 'X');
+	signal pc_c,    pc_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
+	-- TODO: separate out op_c into an instruction and an operand field
 	signal op_c,    op_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
 	signal instruction:      std_ulogic_vector(3 downto 0)     := (others => '0');
 
@@ -136,26 +137,42 @@ begin
 				first_n    <= false;
 				next_n     <= ADVANCE;
 				done_n     <= '0';
-			elsif done_c = '0' then
+			else
 				   if instruction = x"0" then -- nop
 				elsif instruction = x"1" then -- halt
 					next_n <= HALT;
 				elsif instruction = x"2" then -- jump
-					a      <= pc_c(0);
 					ae     <= '1';
-					pc_n   <= pc_c(pc_c'high - 1 downto 0) & pc_c(pc_c'high);
+					if done_c = '0' then
+						a      <= op_c(0);
+						op_n(op_c'high - 4 downto 0) <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
+						pc_n   <= op_c(op_c'high - 4) & pc_c(pc_c'high - 1 downto 0);
+					else
+						a      <= '0';
+						pc_n   <= "0" & pc_c(pc_c'high - 1 downto 0);
+					end if;
 					next_n <= FETCH;
 				elsif instruction = x"3" then -- jumpz
 					if zero_c = '1' then
-						a      <= pc_c(0);
-						pc_n   <= pc_c(pc_c'high - 1 downto 0) & pc_c(pc_c'high);
-						ae     <= '1';
+						if done_c = '0' then
+							a      <= op_c(0);
+							op_n(op_c'high - 4 downto 0) <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
+							pc_n   <= op_c(op_c'high - 4) & pc_c(pc_c'high - 1 downto 0);
+						else
+							a      <= '0';
+							pc_n   <= "0" & pc_c(pc_c'high - 1 downto 0);
+						end if;
 						next_n <= FETCH;
 					end if;
 				elsif instruction = x"4" then -- and
+					if done_c = '0' then
+						-- op_n(op_c'high - 4 downto 0)  <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
+						-- acc_n(op_c'high - 4 downto 0) <= (acc_c(acc_c'high - 4) and (op_c(op_c'high - 4));
+					end if;
 				elsif instruction = x"5" then -- or
 				elsif instruction = x"6" then -- xor
 				elsif instruction = x"7" then -- invert
+					acc_n  <= (not acc_c(acc_c'high)) & acc_c(acc_c'high - 1 downto 0);
 				elsif instruction = x"8" then -- load
 					a      <= pc_c(0);
 					ae     <= '1';
@@ -221,10 +238,10 @@ begin
 				ae   <= '1';
 			end if;
 
-			if dline_c(pc_c'high + 1) = '1' then
+			if dline_c(dline_c'high) = '1' then
 				state_n <= FETCH;
 				first_n <= true;
-				dline_n(pc_c'high + 2) <= '0';
+				dline_n(pc_c'high + 1) <= '0';
 			end if;
 		when HALT    => stop <= '1';
 		end case;

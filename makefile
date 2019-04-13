@@ -5,7 +5,7 @@ CFLAGS=-Wall -Wextra -std=c99 -O2
 all: bit simulate
 
 run: bit bit.hex
-	./bit h bit.hex
+	./bit a bit.asm
 
 simulate: tb.ghw
 

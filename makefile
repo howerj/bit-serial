@@ -4,8 +4,8 @@ CFLAGS=-Wall -Wextra -std=c99 -O2
 
 all: bit tb
 
-run: bit
-	./bit
+run: bit bit.hex
+	./bit bit.hex
 
 simulate: tb
 	./tb

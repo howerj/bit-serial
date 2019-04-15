@@ -21,13 +21,12 @@ clean:
 bit: bit.c
 	${CC} ${CFLAGS} $< -o $@
 
-tb.o: tb.vhd bit.o
+%.o: %.vhd
 	ghdl -a -g $<
 
-bit.o: bit.vhd
-	ghdl -a -g $<
+tb.o: tb.vhd bit.o mem.o
 
-tb: tb.o bit.o
+tb: tb.o bit.o mem.o
 	ghdl -e tb
 
 tb.ghw: tb bit.hex

@@ -16,10 +16,21 @@ architecture testing of tb is
 	signal stop:  boolean    := false;
 	signal clk:   std_ulogic := '0';
 	signal rst:   std_ulogic := '1';
-	signal i:                std_ulogic := '0';
+	signal i:                std_ulogic := 'X';
 	signal o, a, oe, ie, ae: std_ulogic := 'X';
 	signal halted:           std_ulogic := 'X';
 begin
+	sm: entity work.mem
+		generic map(
+			asynchronous_reset => asynchronous_reset,
+			delay              => delay,
+			N                  => N)
+		port map (
+			clk => clk, rst => rst,
+			i => o,
+			o => i,
+			a => a, oe => ie, ie => oe, ae => ae);
+
 	uut: entity work.bcpu 
 		generic map (
 			asynchronous_reset => asynchronous_reset,

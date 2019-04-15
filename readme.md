@@ -18,6 +18,10 @@ a lot slower.
 
 ## To-Do
 
+* Make the instruction set denser
+  - Turn halt into a CPU set/get instruction
+  - Merge left/right shift into a single instruction?
+  - Fully populate instruction set
 * Implement Memory mapped I/O in VHDL and in simulator
 * Fill up instruction set (which instructions arithmetic instructions are optimal/easy to implement?)
 * Implement in VHDL (along with a bit-parallel alternative - use the parallel

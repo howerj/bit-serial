@@ -24,14 +24,12 @@ architecture rtl of bcpu is
 	signal first_c, first_n: boolean := true;
 	signal carry_c, carry_n: std_ulogic := '0';
 	signal zero_c,  zero_n:  std_ulogic := '1';
-	signal sig_c,   sig_n:   std_ulogic := '0';
 	signal done_c,  done_n:  std_ulogic := '0';
-	signal dline_c, dline_n: std_ulogic_vector(N     downto 0) := (others => '0');
+	signal dline_c, dline_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal acc_c,   acc_n:   std_ulogic_vector(N - 1 downto 0) := (others => 'X');
 	signal pc_c,    pc_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	-- TODO: separate out op_c into an instruction and an operand field
 	signal op_c,    op_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal instruction:      std_ulogic_vector(3 downto 0)     := (others => '0');
+	signal cmd_c,   cmd_n:   std_ulogic_vector(3 downto 0)     := (others => 'X');
 
 	procedure adder (signal x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
@@ -40,7 +38,6 @@ architecture rtl of bcpu is
 	end procedure;
 begin
 	assert N >= 8 severity failure;
-	instruction <= op_c(op_c'high downto op_c'high - 3);
 
 	process (clk, rst)
 		procedure reset is
@@ -52,9 +49,9 @@ begin
 			acc_c   <= acc_n;
 			pc_c    <= pc_n;
 			op_c    <= op_n;
+			cmd_c   <= cmd_n;
 			carry_c <= '0';
 			done_c  <= '0';
-			sig_c   <= '0';
 		end procedure;
 	begin
 		if rst = '1' and asynchronous_reset then
@@ -72,13 +69,13 @@ begin
 				acc_c   <= acc_n;
 				pc_c    <= pc_n;
 				op_c    <= op_n;
-				sig_c   <= sig_n;
+				cmd_c   <= cmd_n;
 				done_c  <= done_n;
 			end if;
 		end if;
 	end process;
 
-	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, carry_c, zero_c, sig_c, instruction)
+	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, carry_c, zero_c)
 	begin
 		o  <= '0';
 		a  <= '0';
@@ -93,9 +90,9 @@ begin
 		acc_n   <= acc_c;
 		pc_n    <= pc_c;
 		op_n    <= op_c;
+		cmd_n   <= cmd_c;
 		carry_n <= carry_c;
 		zero_n  <= zero_c;
-		sig_n   <= sig_c;
 		done_n  <= done_c;
 		case state_c is
 		when RESET   =>
@@ -107,10 +104,9 @@ begin
 				ae      <= '1';
 				carry_n <= '0';
 				zero_n  <= '1';
-				sig_n   <= '0';
-				acc_n   <= acc_c(acc_c'high - 1 downto 0) & "0";
-				pc_n    <= pc_c(pc_c'high - 1 downto 0) & "0";
-				op_n    <= op_c(op_c'high - 1 downto 0) & "0";
+				acc_n   <= "0" & acc_c(acc_c'high downto 1);
+				pc_n    <= "0" & pc_c(pc_c'high downto 1);
+				op_n    <= "0" & op_c(op_c'high downto 1);
 			end if;
 
 			if dline_c(dline_c'high) = '1' then
@@ -121,10 +117,27 @@ begin
 			if first_c then
 				dline_n(0) <= '1';
 				first_n    <= false;
+				zero_n     <= '1';
+				done_n     <= '0';
 			else
 				ie      <= '1';
 				carry_n <= '0';
-				op_n    <= op_c(op_c'high - 1 downto 0) & i;
+
+				acc_n <= acc_c(0) & acc_c(acc_c'high downto 1);
+				if acc_c(0) = '1' then -- determine flag status before EXECUTE
+					zero_n <= '0';
+				end if;
+
+				if done_c = '0' then
+					op_n    <= i & op_c(op_c'high downto 1);
+				else
+					cmd_n   <= i   & cmd_c(cmd_c'high downto 1);
+					op_n    <= "0" & op_c (op_c'high  downto 1);
+				end if;
+			end if;
+
+			if dline_c(dline_c'high - 4) = '1' then
+				done_n <= '1';
 			end if;
 
 			if dline_c(dline_c'high) = '1' then
@@ -137,60 +150,70 @@ begin
 				first_n    <= false;
 				next_n     <= ADVANCE;
 				done_n     <= '0';
+				carry_n    <= '0';
 			else
-				   if instruction = x"0" then -- halt/nop
-					if zero_c = '1' then
+				   if cmd_c = x"0" then -- halt/nop
+					if zero_c = '0' then
 						next_n <= HALT;
 					end if;
-				elsif instruction = x"1" then -- jump
+				elsif cmd_c = x"1" then -- jump
 					ae     <= '1';
-					if done_c = '0' then
-						a      <= op_c(0);
-						op_n(op_c'high - 4 downto 0) <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
-						pc_n   <= op_c(op_c'high - 4) & pc_c(pc_c'high - 1 downto 0);
-					else
-						a      <= '0';
-						pc_n   <= "0" & pc_c(pc_c'high - 1 downto 0);
-					end if;
+					a      <= op_c(0);
+					op_n   <= "0"     & op_c(op_c'high downto 1);
+					pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
 					next_n <= FETCH;
-				elsif instruction = x"2" then -- jumpz
+				elsif cmd_c = x"2" then -- jumpz
 					if zero_c = '1' then
-						if done_c = '0' then
-							a      <= op_c(0);
-							op_n(op_c'high - 4 downto 0) <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
-							pc_n   <= op_c(op_c'high - 4) & pc_c(pc_c'high - 1 downto 0);
-						else
-							a      <= '0';
-							pc_n   <= "0" & pc_c(pc_c'high - 1 downto 0);
-						end if;
+						a      <= op_c(op_c'high);
+						op_n   <= "0"     & op_c(op_c'high downto 1);
+						pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
 						next_n <= FETCH;
 					end if;
-				elsif instruction = x"3" then -- N/A
-				elsif instruction = x"4" then -- and
+				elsif cmd_c = x"3" then -- N/A
+				elsif cmd_c = x"4" then -- and
 					if done_c = '0' then
-						-- op_n(op_c'high - 4 downto 0)  <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
-						-- acc_n(op_c'high - 4 downto 0) <= (acc_c(acc_c'high - 4) and (op_c(op_c'high - 4));
+						op_n  <= "0" & op_c (op_c'high downto 1);
+						acc_n <= (op_c(0) and acc_c(0)) & acc_c(acc_c'high downto 1);
+					else
+						acc_n <= acc_n(0) & acc_c(acc_c'high downto 1);
 					end if;
-				elsif instruction = x"5" then -- or
-				elsif instruction = x"6" then -- xor
-				elsif instruction = x"7" then -- invert
-					acc_n  <= (not acc_c(acc_c'high)) & acc_c(acc_c'high - 1 downto 0);
-				elsif instruction = x"8" then -- load
-					a      <= pc_c(0);
+				elsif cmd_c = x"5" then -- or
+					op_n  <= "0" & op_c (op_c'high downto 1);
+					acc_n <= (op_c(0)  or acc_c(0)) & acc_c(acc_c'high downto 1);
+				elsif cmd_c = x"6" then -- xor
+					op_n  <= "0" & op_c (op_c'high downto 1);
+					acc_n <= (op_c(0) xor acc_c(0)) & acc_c(acc_c'high downto 1);
+				elsif cmd_c = x"7" then -- invert
+					acc_n <= (not acc_c(0)) & acc_c(acc_c'high downto 1);
+				elsif cmd_c = x"8" then -- load
+					a      <= acc_c(0);
 					ae     <= '1';
-					pc_n   <= pc_c(pc_c'high - 1 downto 0) & pc_c(pc_c'high);
+					acc_n  <= acc_n(0) & acc_c(acc_c'high downto 1);
 					next_n <= LOAD;
-				elsif instruction = x"9" then -- store
-					a      <= pc_c(0);
+				elsif cmd_c = x"9" then -- store
+					a      <= acc_c(0);
 					ae     <= '1';
-					pc_n   <= pc_c(pc_c'high - 1 downto 0) & pc_c(pc_c'high);
+					acc_n  <= acc_n(0) & acc_c(acc_c'high downto 1);
 					next_n <= STORE;
-				elsif instruction = x"A" then -- literal
-				elsif instruction = x"B" then -- N/A
-				elsif instruction = x"C" then -- add
-				elsif instruction = x"D" then -- less
-				elsif instruction = x"E" then -- lshift
-				elsif instruction = x"F" then -- rshift
+				elsif cmd_c = x"A" then -- literal
+					acc_n  <= op_c(0) & acc_c(acc_c'high downto 1);
+					op_n   <= "0" & op_c (op_c'high downto 1);
+				elsif cmd_c = x"B" then -- N/A
+				elsif cmd_c = x"C" then -- add
+					acc_n <= "0" & acc_c(acc_c'high downto 1);
+					op_n  <= "0" & op_c(op_c'high downto 1);
+					adder(acc_c(0), op_c(0), carry_c, acc_n(acc_n'high), carry_n);
+				elsif cmd_c = x"D" then -- less
+				elsif cmd_c = x"E" then -- lshift
+					if op_c(0) = '1' then
+						acc_n  <= acc_c(acc_c'high - 1 downto 0) & "0";
+					end if;
+					op_n   <= "0" & op_c (op_c'high downto 1);
+				elsif cmd_c = x"F" then -- rshift
+					if op_c(0) = '1' then
+						acc_n  <= "0" & acc_c(acc_c'high downto 1);
+					end if;
+					op_n   <= "0" & op_c (op_c'high downto 1);
 				end if;
 			end if;
 
@@ -209,7 +232,7 @@ begin
 			else
 				o      <= acc_c(0);
 				oe     <= '1';
-				acc_n  <= acc_c(acc_c'high - 1 downto 0) & acc_c(acc_c'high);
+				acc_n  <= acc_c(0) & acc_c(acc_c'high downto 1);
 			end if;
 			if dline_c(dline_c'high) = '1' then
 				state_n <= ADVANCE;
@@ -221,7 +244,7 @@ begin
 				first_n    <= false;
 			else
 				ie     <= '1';
-				acc_n  <= acc_c(acc_c'high - 1 downto 0) & i;
+				acc_n  <= i & acc_c(acc_c'high downto 1);
 			end if;
 			if dline_c(dline_c'high) = '1' then
 				state_n <= ADVANCE;
@@ -231,19 +254,18 @@ begin
 			if first_c then
 				dline_n(0) <= '1';
 				first_n    <= false;
-				sig_n      <= '0';
 				carry_n    <= '0';
 			else
-				adder(pc_c(0), dline_c(0), carry_c, sig_n, carry_n);
-				pc_n <= sig_c & pc_c(pc_c'high downto 1);
-				a    <= pc_c(0); -- a <= pc_n(0)
+				pc_n  <= "0" & pc_c(pc_c'high downto 1);
+				adder(pc_c(0), dline_c(0), carry_c, pc_n(pc_n'high), carry_n);
+
+				a    <= pc_c(0);
 				ae   <= '1';
 			end if;
 
 			if dline_c(dline_c'high) = '1' then
 				state_n <= FETCH;
 				first_n <= true;
-				dline_n(pc_c'high + 1) <= '0';
 			end if;
 		when HALT    => stop <= '1';
 		end case;

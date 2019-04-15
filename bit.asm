@@ -27,7 +27,7 @@ and   $F
 store count
 less  $1
 jumpz start
-halt  $0
+halt  $1
 # and jump back...
 label end
 jump  start

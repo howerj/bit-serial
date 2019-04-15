@@ -5,7 +5,7 @@ CFLAGS=-Wall -Wextra -std=c99 -O2
 all: bit simulate
 
 run: bit bit.hex
-	./bit a bit.asm
+	./bit -r bit.hex
 
 simulate: tb.ghw
 
@@ -13,7 +13,10 @@ viewer: tb.ghw
 	gtkwave -f $< &> /dev/null&
 
 clean:
-	rm -fv *.cf *.o *.ghw tb bit
+	rm -fv *.cf *.o *.ghw *.hex tb bit
+
+%.hex: %.asm bit
+	./bit -a $< $@
 
 bit: bit.c
 	${CC} ${CFLAGS} $< -o $@

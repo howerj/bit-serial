@@ -138,10 +138,11 @@ begin
 				next_n     <= ADVANCE;
 				done_n     <= '0';
 			else
-				   if instruction = x"0" then -- nop
-				elsif instruction = x"1" then -- halt
-					next_n <= HALT;
-				elsif instruction = x"2" then -- jump
+				   if instruction = x"0" then -- halt/nop
+					if zero_c = '1' then
+						next_n <= HALT;
+					end if;
+				elsif instruction = x"1" then -- jump
 					ae     <= '1';
 					if done_c = '0' then
 						a      <= op_c(0);
@@ -152,7 +153,7 @@ begin
 						pc_n   <= "0" & pc_c(pc_c'high - 1 downto 0);
 					end if;
 					next_n <= FETCH;
-				elsif instruction = x"3" then -- jumpz
+				elsif instruction = x"2" then -- jumpz
 					if zero_c = '1' then
 						if done_c = '0' then
 							a      <= op_c(0);
@@ -164,6 +165,7 @@ begin
 						end if;
 						next_n <= FETCH;
 					end if;
+				elsif instruction = x"3" then -- N/A
 				elsif instruction = x"4" then -- and
 					if done_c = '0' then
 						-- op_n(op_c'high - 4 downto 0)  <= op_c(op_c'high - 4 downto 0) & op_c(op_c'high - 4);
@@ -187,8 +189,8 @@ begin
 				elsif instruction = x"B" then -- N/A
 				elsif instruction = x"C" then -- add
 				elsif instruction = x"D" then -- less
-				elsif instruction = x"E" then -- N/A
-				elsif instruction = x"F" then -- N/A
+				elsif instruction = x"E" then -- lshift
+				elsif instruction = x"F" then -- rshift
 				end if;
 			end if;
 

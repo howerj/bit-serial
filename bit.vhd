@@ -19,19 +19,38 @@ end;
 
 architecture rtl of bcpu is
 	type state_t is (RESET, FETCH, EXECUTE, STORE, LOAD, ADVANCE, HALT);
+	type cmd_t is (
+		iOR, iAND, iXOR, iINVERT, iADD, iSUB, iLSHIFT, iRSHIFT,
+		iLOAD, iSTORE, iLITERAL, iFLAGS, iJUMP, iJUMPZ, i14, i15
+	);
+	constant C:   integer := 0;
+	constant U:   integer := 1;
+	constant Z:   integer := 2;
+	constant Ng:  integer := 3;
+	constant HLT: integer := 4;
+	constant R:   integer := 5;
+	constant PCC: integer := 6; -- temp used by PC carry
+
+	-- TODO:
+	-- * Use <https://gaisler.com/doc/vhdl2proc.pdf> as an example
+	-- of how to structure this module; put everything in records.
+	-- * Add delay estimates in
+	-- * Add interrupt handling
+	-- * Add flags for instruction modes; such as rotate vs shift
+	-- * Try to merge ADVANCE into one of the other states if possible
 	signal state_c, state_n: state_t := RESET;
 	signal next_c,  next_n:  state_t := RESET;
 	signal first_c, first_n: boolean := true;
-	signal carry_c, carry_n: std_ulogic := '0';
-	signal zero_c,  zero_n:  std_ulogic := '1';
 	signal done_c,  done_n:  std_ulogic := '0';
 	signal dline_c, dline_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal acc_c,   acc_n:   std_ulogic_vector(N - 1 downto 0) := (others => 'X');
 	signal pc_c,    pc_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
 	signal op_c,    op_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal cmd_c,   cmd_n:   std_ulogic_vector(3 downto 0)     := (others => 'X');
+	signal flags_c, flags_n: std_ulogic_vector(N - 1 downto 0) := (others => 'X');
+	signal cmd_c,   cmd_n:   std_ulogic_vector(3 downto 0)     := (others => '0');
+	signal cmd: cmd_t := iOR;
 
-	procedure adder (signal x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
+	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
 		sum  <= x xor y xor cin;
 		cout <= (x and y) or (cin and (x xor y));
@@ -50,7 +69,7 @@ begin
 			pc_c    <= pc_n;
 			op_c    <= op_n;
 			cmd_c   <= cmd_n;
-			carry_c <= '0';
+			flags_c <= flags_n;
 			done_c  <= '0';
 		end procedure;
 	begin
@@ -64,24 +83,24 @@ begin
 				next_c  <= next_n;
 				dline_c <= dline_n;
 				first_c <= first_n;
-				carry_c <= carry_n;
-				zero_c  <= zero_n;
 				acc_c   <= acc_n;
 				pc_c    <= pc_n;
 				op_c    <= op_n;
 				cmd_c   <= cmd_n;
+				flags_c <= flags_n;
 				done_c  <= done_n;
 			end if;
 		end if;
 	end process;
 
-	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, carry_c, zero_c)
+	cmd <= cmd_t'val(to_integer(unsigned(cmd_c)));
+	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, flags_c, cmd)
 	begin
-		o  <= '0';
-		a  <= '0';
-		ie <= '0';
-		ae <= '0';
-		oe <= '0';
+		o       <= '0';
+		a       <= '0';
+		ie      <= '0';
+		ae      <= '0';
+		oe      <= '0';
 		stop    <= '0';
 		dline_n <= dline_c(dline_c'high - 1 downto 0) & "0";
 		state_n <= state_c;
@@ -91,9 +110,8 @@ begin
 		pc_n    <= pc_c;
 		op_n    <= op_c;
 		cmd_n   <= cmd_c;
-		carry_n <= carry_c;
-		zero_n  <= zero_c;
 		done_n  <= done_c;
+		flags_n <= flags_c;
 		case state_c is
 		when RESET   =>
 			if first_c then
@@ -102,11 +120,10 @@ begin
 			else
 				oe      <= '1';
 				ae      <= '1';
-				carry_n <= '0';
-				zero_n  <= '1';
 				acc_n   <= "0" & acc_c(acc_c'high downto 1);
 				pc_n    <= "0" & pc_c(pc_c'high downto 1);
 				op_n    <= "0" & op_c(op_c'high downto 1);
+				flags_n <= "0" & flags_c(flags_c'high downto 1);
 			end if;
 
 			if dline_c(dline_c'high) = '1' then
@@ -115,17 +132,17 @@ begin
 			end if;
 		when FETCH   =>
 			if first_c then
-				dline_n(0) <= '1';
-				first_n    <= false;
-				zero_n     <= '1';
-				done_n     <= '0';
+				dline_n(0)  <= '1';
+				first_n     <= false;
+				flags_n(Z)  <= '1';
+				flags_n(Ng) <= acc_c(acc_c'high);
+				done_n      <= '0';
 			else
-				ie      <= '1';
-				carry_n <= '0';
+				ie          <= '1';
 
 				acc_n <= acc_c(0) & acc_c(acc_c'high downto 1);
 				if acc_c(0) = '1' then -- determine flag status before EXECUTE
-					zero_n <= '0';
+					flags_n(Z) <= '0';
 				end if;
 
 				if done_c = '0' then
@@ -141,7 +158,13 @@ begin
 			end if;
 
 			if dline_c(dline_c'high) = '1' then
-				state_n <= EXECUTE;
+				   if flags_c(HLT) = '1' then
+					state_n <= HALT;
+				elsif flags_c(R) = '1' then
+					state_n <= RESET;
+				else
+					state_n <= EXECUTE;
+				end if;
 				first_n <= true;
 			end if;
 		when EXECUTE =>
@@ -150,71 +173,81 @@ begin
 				first_n    <= false;
 				next_n     <= ADVANCE;
 				done_n     <= '0';
-				carry_n    <= '0';
+				if cmd_c = x"5" then -- Comparator!
+					flags_n(U) <= '1'; -- may need to rethink this...
+				end if;
 			else
-				   if cmd_c = x"0" then -- halt/nop
-					if zero_c = '0' then
-						next_n <= HALT;
-					end if;
-				elsif cmd_c = x"1" then -- jump
-					ae     <= '1';
-					a      <= op_c(0);
-					op_n   <= "0"     & op_c(op_c'high downto 1);
-					pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
-					next_n <= FETCH;
-				elsif cmd_c = x"2" then -- jumpz
-					if zero_c = '1' then
-						a      <= op_c(op_c'high);
-						op_n   <= "0"     & op_c(op_c'high downto 1);
-						pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
-						next_n <= FETCH;
-					end if;
-				elsif cmd_c = x"3" then -- N/A
-				elsif cmd_c = x"4" then -- and
+				case cmd is
+				when iOR =>
+					op_n  <= "0" & op_c (op_c'high downto 1);
+					acc_n <= (op_c(0)  or acc_c(0)) & acc_c(acc_c'high downto 1);
+				when iAND =>
 					if done_c = '0' then
 						op_n  <= "0" & op_c (op_c'high downto 1);
 						acc_n <= (op_c(0) and acc_c(0)) & acc_c(acc_c'high downto 1);
 					else
 						acc_n <= acc_n(0) & acc_c(acc_c'high downto 1);
 					end if;
-				elsif cmd_c = x"5" then -- or
-					op_n  <= "0" & op_c (op_c'high downto 1);
-					acc_n <= (op_c(0)  or acc_c(0)) & acc_c(acc_c'high downto 1);
-				elsif cmd_c = x"6" then -- xor
+				when iXOR =>
 					op_n  <= "0" & op_c (op_c'high downto 1);
 					acc_n <= (op_c(0) xor acc_c(0)) & acc_c(acc_c'high downto 1);
-				elsif cmd_c = x"7" then -- invert
+				when iINVERT =>
 					acc_n <= (not acc_c(0)) & acc_c(acc_c'high downto 1);
-				elsif cmd_c = x"8" then -- load
-					a      <= acc_c(0);
-					ae     <= '1';
-					acc_n  <= acc_n(0) & acc_c(acc_c'high downto 1);
-					next_n <= LOAD;
-				elsif cmd_c = x"9" then -- store
-					a      <= acc_c(0);
-					ae     <= '1';
-					acc_n  <= acc_n(0) & acc_c(acc_c'high downto 1);
-					next_n <= STORE;
-				elsif cmd_c = x"A" then -- literal
-					acc_n  <= op_c(0) & acc_c(acc_c'high downto 1);
-					op_n   <= "0" & op_c (op_c'high downto 1);
-				elsif cmd_c = x"B" then -- N/A
-				elsif cmd_c = x"C" then -- add
+
+				when iADD =>
 					acc_n <= "0" & acc_c(acc_c'high downto 1);
 					op_n  <= "0" & op_c(op_c'high downto 1);
-					adder(acc_c(0), op_c(0), carry_c, acc_n(acc_n'high), carry_n);
-				elsif cmd_c = x"D" then -- less
-				elsif cmd_c = x"E" then -- lshift
+					adder(acc_c(0), op_c(0), flags_c(C), acc_n(acc_n'high), flags_n(C));
+				when iSUB =>
+					acc_n <= "0" & acc_c(acc_c'high downto 1);
+					op_n  <= "0" & op_c(op_c'high downto 1);
+					adder(acc_c(0), not op_c(0), flags_c(U), acc_n(acc_n'high), flags_n(U));
+				when iLSHIFT =>
 					if op_c(0) = '1' then
 						acc_n  <= acc_c(acc_c'high - 1 downto 0) & "0";
 					end if;
 					op_n   <= "0" & op_c (op_c'high downto 1);
-				elsif cmd_c = x"F" then -- rshift
+				when iRSHIFT =>
 					if op_c(0) = '1' then
 						acc_n  <= "0" & acc_c(acc_c'high downto 1);
 					end if;
 					op_n   <= "0" & op_c (op_c'high downto 1);
-				end if;
+
+				when iLOAD =>
+					a      <= acc_c(0);
+					ae     <= '1';
+					acc_n  <= acc_c(0) & acc_c(acc_c'high downto 1);
+					next_n <= LOAD;
+				when iSTORE =>
+					a      <= acc_c(0);
+					ae     <= '1';
+					acc_n  <= acc_c(0) & acc_c(acc_c'high downto 1);
+					next_n <= STORE;
+				when iLITERAL =>
+					acc_n  <= op_c(0) & acc_c(acc_c'high downto 1);
+					op_n   <=     "0" & op_c (op_c'high downto 1);
+				when iFLAGS =>
+					acc_n   <= flags_c(0) & acc_c(acc_c'high downto 1);
+					flags_n <=    op_c(0) & flags_c(flags_c'high downto 1);
+					op_n    <=        "0" & op_c(op_c'high downto 1);
+
+				when iJUMP =>
+					ae     <= '1';
+					a      <= op_c(0);
+					op_n   <= "0"     & op_c(op_c'high downto 1);
+					pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
+					next_n <= FETCH;
+				when iJUMPZ =>
+					if flags_c(Z) = '1' then
+						ae     <= '1';
+						a      <= op_c(0);
+						op_n   <= "0"     & op_c(op_c'high downto 1);
+						pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
+						next_n <= FETCH;
+					end if;
+				when i14 => -- N/A
+				when i15 => -- N/A
+				end case;
 			end if;
 
 			if dline_c(dline_c'high - 4) = '1' then
@@ -252,18 +285,19 @@ begin
 			end if;
 		when ADVANCE =>
 			if first_c then
-				dline_n(0) <= '1';
-				first_n    <= false;
-				carry_n    <= '0';
+				dline_n(0)   <= '1';
+				first_n      <= false;
+				flags_n(PCC) <= '0';
 			else
 				pc_n  <= "0" & pc_c(pc_c'high downto 1);
-				adder(pc_c(0), dline_c(0), carry_c, pc_n(pc_n'high), carry_n);
+				adder(pc_c(0), dline_c(0), flags_c(PCC), pc_n(pc_n'high), flags_n(PCC));
 
 				a    <= pc_c(0);
 				ae   <= '1';
 			end if;
 
 			if dline_c(dline_c'high) = '1' then
+				-- if PCC is true when done, we should HALT?
 				state_n <= FETCH;
 				first_n <= true;
 			end if;

@@ -14,15 +14,15 @@
 #define MSIZE            (4096u)
 #define MAX_VARS         (256)
 typedef uint16_t mw_t; /* machine word */
-typedef struct { mw_t pc, acc, m[MSIZE]; } bcpu_t;
+typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
 typedef struct { char name[80]; int type; mw_t value; } var_t;
 enum { TYPE_VAR, TYPE_LABEL };
 
 static const char *commands[] = { 
-	"halt", "jump",  "jumpz",   "3?",
-	"and",  "or",    "xor",     "invert",
-	"load", "store", "literal", "11?",
-	"add",  "less",  "lshift",  "rshift"
+	"or",   "and",   "xor",     "invert",
+	"add",  "sub",   "lshift",  "rshift",
+	"load", "store", "literal", "flags",
+	"jump", "jumpz", "14?",    "15?",
 };
 
 static int instruction(const char *c) {
@@ -47,7 +47,7 @@ static var_t *lookup(var_t *vs, size_t length, const char *var) {
 	return NULL;
 }
 
-static int add(var_t *vs, size_t length, const char *name, int type, mw_t value, int unique) {
+static int reference(var_t *vs, size_t length, const char *name, int type, mw_t value, int unique) {
 	assert(vs);
 	assert(name);
 	if (unique && lookup(vs, length, name))
@@ -85,7 +85,7 @@ static char *patch(bcpu_t *b, var_t *labels, size_t llength, var_t *patches, siz
 static int skip(char *line) {
 	assert(line);
 	for (size_t i = 0; line[i]; i++)
-		if (line[i] == '#') {
+		if (line[i] == ';' || line[i] == '#') {
 			line[i] = '\0';
 			return 1;
 		}
@@ -111,6 +111,8 @@ static int assemble(bcpu_t *b, FILE *input) {
 	// - Improve comments
 	// - Add directive; setting variables
 	// - Commands: 3 argument and 1 argument (nop/halt/invert) commands
+	// - Add pseudo instructions; nop, clr, relative jumps
+	// - Add calculations for lshift/rshift operand and bound checks
 	for (char line[256] = { 0 }; fgets(line, sizeof line, input); memset(line, 0, sizeof line)) {
 		char command[80] = { 0 }, arg1[80] = { 0 }, arg2[80] = { 0 };
 		skip(line);
@@ -119,7 +121,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 			fprintf(stderr, "program space full\n");
 			goto fail;
 		}
-		if (args == 0) {
+		if (args <= 0) {
 			/* do nothing */
 		} else if (args == 1) {
 			fprintf(stderr, "invalid command: %s\n", line);
@@ -140,13 +142,13 @@ static int assemble(bcpu_t *b, FILE *input) {
 					}
 					data -= op1;
 				} else if (!strcmp(command, "variable")) {
-					const int added = add(vs, MAX_VARS, arg1, TYPE_VAR, data--, 1);
+					const int added = reference(vs, MAX_VARS, arg1, TYPE_VAR, data--, 1);
 					if (added < 0) {
 						fprintf(stderr, "variable? %d/%s\n", added, arg1);
 						goto fail;
 					}
 				} else if (!strcmp(command, "label")) {
-					const int added = add(vs, MAX_VARS, arg1, TYPE_LABEL, used, 1);
+					const int added = reference(vs, MAX_VARS, arg1, TYPE_LABEL, used, 1);
 					if (added < 0) {
 						fprintf(stderr, "label? %d/%s\n", added, arg1);
 						goto fail;
@@ -155,14 +157,11 @@ static int assemble(bcpu_t *b, FILE *input) {
 					fprintf(stderr, "unknown command: %s\n", command);
 					goto fail;
 				}
-			//} else if (args == 3) {
-			//	if (!strcmp(command, "set")) {
-			//	}
 			} else {
 				if (!arg1num) {
 					var_t *v = lookup(vs, MAX_VARS, arg1);
 					if (!v) {
-						const int added = add(unknown, MAX_VARS, arg1, TYPE_LABEL, used, 0);
+						const int added = reference(unknown, MAX_VARS, arg1, TYPE_LABEL, used, 0);
 						if (added < 0) {
 							fprintf(stderr, "forward reference? %d/%s\n", added, arg1);
 							goto fail;
@@ -174,6 +173,10 @@ static int assemble(bcpu_t *b, FILE *input) {
 				}
 				b->m[used++] = (((mw_t)inst) << 12) | op1;
 			}
+		} else if (args == 3) {
+		} else {
+			fprintf(stderr, "invalid command: \"%s\"\n", line);
+			goto fail;
 		}
 	}
 	const char *unknown_label = patch(b, vs, MAX_VARS, unknown, MAX_VARS);
@@ -183,7 +186,6 @@ static int assemble(bcpu_t *b, FILE *input) {
 	}
 	free(vs);
 	free(unknown);
-	//b->used = used;
 	return 0;
 fail:
 	free(vs);
@@ -191,22 +193,36 @@ fail:
 	return -1;
 }
 
-static inline int trace(bcpu_t *b, FILE *tracer, unsigned cycles, const mw_t pc, const mw_t acc, const mw_t op1, const mw_t cmd) {
+static inline int trace(bcpu_t *b, FILE *tracer, unsigned cycles, const mw_t pc, const mw_t flg, const mw_t acc, const mw_t op1, const mw_t cmd) {
 	assert(b);
 	if (!tracer)
 		return 0;
 	assert(cmd < (sizeof(commands)/sizeof(commands[0])));
 	char cbuf[8] = { 0 };
-	snprintf(cbuf, sizeof cbuf, "%s       ", commands[cmd]);
-	return fprintf(tracer, "%4x: %4x %s %4x %4x\n", cycles, (unsigned)pc, cbuf, (unsigned)acc, (unsigned)op1);
+	snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]);
+	return fprintf(tracer, "%4x: %4x %2x:%s %4x %4x %4x\n", cycles, (unsigned)pc, (unsigned)cmd, cbuf, (unsigned)acc, (unsigned)op1, (unsigned)flg);
 }
 
 static inline unsigned bits(unsigned b) {
 	unsigned r = 0;
-	while (b) {
-		r++;
-		b >>= 1;
-	}
+	do if (b & 1) r++; while (b >>= 1);
+	return r;
+}
+
+static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
+	assert(carry);
+	const mw_t r = a + b;
+	*carry &= ~1u;
+	if (r < a || r < b)
+		*carry |= 1;
+	return r;
+}
+
+static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
+	assert(under);
+	const mw_t r = a - b;
+	*under &= ~2u;
+	*under |= b > a;
 	return r;
 }
 
@@ -215,7 +231,7 @@ static int bcpu(bcpu_t *b, FILE *in, FILE *out, FILE *tracer, const unsigned cyc
 	assert(in);
 	assert(out);
 	int r = 0;
-	mw_t * const m = b->m, pc = b->pc, acc = b->acc;
+	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
 	const unsigned forever = cycles == 0;
        	unsigned count = 0;
 	for (; count < cycles || forever; count++) {
@@ -223,28 +239,38 @@ static int bcpu(bcpu_t *b, FILE *in, FILE *out, FILE *tracer, const unsigned cyc
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 		if (CONFIG_TRACER_ON)
-			trace(b, tracer, count, pc, acc, op1, cmd);
+			trace(b, tracer, count, pc, flg, acc, op1, cmd);
+		if (flg & (1u << 4)) /* HALT */
+			goto halt;
+		if (flg & (1u << 5)) { /* RESET */
+			pc = 0;
+			acc = 0;
+			flg = 0;
+		}
+		flg &= 0xFFF3;
+		flg |= ((!acc) << 2) | ((!!(acc & 0x8000)) << 3);
+
 		pc++;
 		switch (cmd) {
-		case 0x0: if (op1)  goto halt;  break; /* HALT?   */
-		case 0x1: pc = op1;             break; /* JUMP    */
-		case 0x2: if (!acc) pc = op1;   break; /* JUMPZ   */
-		/*   0x4: Reserved                                */
+		case 0x0: acc |= op1;                break; /* OR      */
+		case 0x1: acc &= (0xF000 | op1);     break; /* AND     */
+		case 0x2: acc ^= op1;                break; /* XOR     */
+		case 0x3: acc = ~acc;                break; /* INVERT  */
 
-		case 0x4: acc &= op1;           break; /* AND     */
-		case 0x5: acc |= op1;           break; /* OR      */
-		case 0x6: acc ^= op1;           break; /* XOR     */
-		case 0x7: acc = ~acc;           break; /* INVERT  */
+		case 0x4: acc = add(acc, op1, &flg); break; /* ADD     */
+		case 0x5: acc = sub(acc, op1, &flg); break; /* SUB     */
+		case 0x6: acc <<= bits(op1);         break; /* LSHIFT  */
+		case 0x7: acc >>= bits(op1);         break; /* RSHIFT  */
 
-		case 0x8: acc = m[op1 % MSIZE]; break; /* LOAD    */
-		case 0x9: m[op1 % MSIZE] = acc; break; /* STORE   */
-		case 0xA: acc = op1;            break; /* LITERAL */
-		/*   0xB: Reserved                                */
+		case 0x8: acc = m[op1 % MSIZE];      break; /* LOAD    */
+		case 0x9: m[op1 % MSIZE] = acc;      break; /* STORE   */
+		case 0xA: acc = op1;                 break; /* LITERAL */
+		case 0xB: acc = flg; flg = op1;      break; /* FLAGS */
 
-		case 0xC: acc += op1;           break; /* ADD     */
-		case 0xD: acc = acc < op1;      break; /* LESS    */
-		case 0xE: acc <<= bits(op1);    break; /* LSHIFT  */
-		case 0xF: acc >>= bits(op1);    break; /* RSHIFT  */
+		case 0xC: pc = op1;                  break; /* JUMP    */
+		case 0xD: if (!acc) pc = op1;        break; /* JUMPZ   */
+		/*   0xE: Reserved                                     */
+		/*   0xF: Reserved                                     */
 
 		default: r = -1; goto halt;
 		}
@@ -252,6 +278,7 @@ static int bcpu(bcpu_t *b, FILE *in, FILE *out, FILE *tracer, const unsigned cyc
 halt:
 	b->pc  = pc;
 	b->acc = acc;
+	b->flg = flg;
 	return r;
 }
 
@@ -298,7 +325,7 @@ static FILE *fopen_or_die(const char *file, const char *mode) {
 
 int main(int argc, char **argv) {
 	int compile = 0, run = 0, cycles = 0x1000;
-	static bcpu_t b = { 0, 0, { 0 } };
+	static bcpu_t b = { 0, 0, 0, { 0 } };
 	FILE *program = stdin, *trace = stderr, *hex = NULL;
 	if (argc < 2)
 		die("usage: %s -trashf input? out.hex?", argv[0]);

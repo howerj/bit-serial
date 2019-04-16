@@ -8,39 +8,23 @@ end tb;
 architecture testing of tb is
 	constant clock_frequency:    positive := 100_000_000;
 	constant clock_period:       time     := 1000 ms / clock_frequency;
-	constant clocks:             integer  := 1000;
+	constant clocks:             integer  := 20000;
 	constant N:                  positive := 16;
 	constant delay:              time     := 0 ns;
 	constant asynchronous_reset: boolean  := false;
 
-	signal stop:  boolean    := false;
-	signal clk:   std_ulogic := '0';
-	signal rst:   std_ulogic := '1';
-	signal i:                std_ulogic := 'X';
-	signal o, a, oe, ie, ae: std_ulogic := 'X';
-	signal halted:           std_ulogic := 'X';
+	signal stop:   boolean    := false;
+	signal clk:    std_ulogic := '0';
+	signal rst:    std_ulogic := '1';
+	signal tx, rx: std_ulogic := 'X';
 begin
-	sm: entity work.mem
+	uut: entity work.top
 		generic map(
 			asynchronous_reset => asynchronous_reset,
 			delay              => delay,
+			file_name          => "bit.hex",
 			N                  => N)
-		port map (
-			clk => clk, rst => rst,
-			i => o,
-			o => i,
-			a => a, oe => ie, ie => oe, ae => ae);
-
-	uut: entity work.bcpu 
-		generic map (
-			asynchronous_reset => asynchronous_reset,
-			delay              => delay,
-			N                  => N)
-		port map (
-			clk => clk, rst => rst,
-			i => i,
-			o => o, a => a, oe => oe, ie => ie, ae => ae,
-			stop => halted);
+		port map (clk => clk, rst => rst, tx => tx, rx => rx);
 
 	clock_process: process
 		variable count: integer := 0;

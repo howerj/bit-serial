@@ -24,9 +24,11 @@ bit: bit.c
 %.o: %.vhd
 	ghdl -a -g $<
 
-tb.o: tb.vhd bit.o mem.o
+top.o: mem.o bit.o
 
-tb: tb.o bit.o mem.o
+tb.o: tb.vhd bit.o mem.o top.o
+
+tb: tb.o bit.o mem.o top.o
 	ghdl -e tb
 
 tb.ghw: tb bit.hex

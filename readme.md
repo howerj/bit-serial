@@ -29,6 +29,9 @@ a lot slower.
 * Document system (instruction set tables, and state machine diagrams, cycle timing)
 * Make an assembler
 * Port a simple, very cut down, Forth
+* Do the program counter addition in parallel with the execution, or fetch
+* Use a LFSR instead of a Program Counter?
+* Add an interrupt request line and an acknowledge line
 
 ## References
 

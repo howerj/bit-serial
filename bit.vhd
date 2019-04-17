@@ -20,8 +20,10 @@ end;
 architecture rtl of bcpu is
 	type state_t is (RESET, FETCH, EXECUTE, STORE, LOAD, ADVANCE, HALT);
 	type cmd_t is (
-		iOR, iAND, iXOR, iINVERT, iADD, iSUB, iLSHIFT, iRSHIFT,
-		iLOAD, iSTORE, iLITERAL, iFLAGS, iJUMP, iJUMPZ, i14, i15
+		iOR,   iAND,   iXOR,     iINVERT, 
+		iADD,  iSUB,   iLSHIFT,  iRSHIFT,
+		iLOAD, iSTORE, iLITERAL, iFLAGS, 
+		iJUMP, iJUMPZ, i14,      i15
 	);
 	constant C:   integer := 0;
 	constant U:   integer := 1;
@@ -38,6 +40,8 @@ architecture rtl of bcpu is
 	-- * Add interrupt handling
 	-- * Add flags for instruction modes; such as rotate vs shift
 	-- * Try to merge ADVANCE into one of the other states if possible
+	-- * Try to share resource as much as possible, for example the
+	-- adder/subtractor, but only if that save space.
 	signal state_c, state_n: state_t := RESET;
 	signal next_c,  next_n:  state_t := RESET;
 	signal first_c, first_n: boolean := true;
@@ -94,7 +98,7 @@ begin
 	end process;
 
 	cmd <= cmd_t'val(to_integer(unsigned(cmd_c)));
-	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, flags_c, cmd)
+	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, flags_c, cmd, acc_n, pc_n, flags_n)
 	begin
 		o       <= '0';
 		a       <= '0';
@@ -173,20 +177,23 @@ begin
 				first_n    <= false;
 				next_n     <= ADVANCE;
 				done_n     <= '0';
-				if cmd_c = x"5" then -- Comparator!
+				if cmd = iSUB then -- Comparator!
 					flags_n(U) <= '1'; -- may need to rethink this...
+				end if;
+				if cmd = iADD then
+					flags_n(C) <= '0'; -- may need to rethink this...
 				end if;
 			else
 				case cmd is
 				when iOR =>
-					op_n  <= "0" & op_c (op_c'high downto 1);
-					acc_n <= (op_c(0)  or acc_c(0)) & acc_c(acc_c'high downto 1);
+					op_n  <= "0" & op_c (op_c'high  downto 1);
+					acc_n <= (op_c(0) or acc_c(0)) & acc_c(acc_c'high downto 1);
 				when iAND =>
 					if done_c = '0' then
 						op_n  <= "0" & op_c (op_c'high downto 1);
 						acc_n <= (op_c(0) and acc_c(0)) & acc_c(acc_c'high downto 1);
 					else
-						acc_n <= acc_n(0) & acc_c(acc_c'high downto 1);
+						acc_n <= acc_c(0) & acc_c(acc_c'high downto 1);
 					end if;
 				when iXOR =>
 					op_n  <= "0" & op_c (op_c'high downto 1);
@@ -291,7 +298,6 @@ begin
 			else
 				pc_n  <= "0" & pc_c(pc_c'high downto 1);
 				adder(pc_c(0), dline_c(0), flags_c(PCC), pc_n(pc_n'high), flags_n(PCC));
-
 				a    <= pc_c(0);
 				ae   <= '1';
 			end if;

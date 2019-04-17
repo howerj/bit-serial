@@ -16,7 +16,7 @@ architecture testing of tb is
 	signal stop:   boolean    := false;
 	signal clk:    std_ulogic := '0';
 	signal rst:    std_ulogic := '1';
-	signal tx, rx: std_ulogic := 'X';
+	signal tx, rx: std_ulogic := '0';
 begin
 	uut: entity work.top
 		generic map(
@@ -24,7 +24,11 @@ begin
 			delay              => delay,
 			file_name          => "bit.hex",
 			N                  => N)
-		port map (clk => clk, rst => rst, tx => tx, rx => rx);
+		port map (
+			clk => clk, 
+--			rst => rst, 
+			tx  => tx, 
+			rx  => rx);
 
 	clock_process: process
 		variable count: integer := 0;

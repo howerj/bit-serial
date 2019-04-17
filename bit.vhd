@@ -46,6 +46,7 @@ architecture rtl of bcpu is
 	signal next_c,  next_n:  state_t := RESET;
 	signal first_c, first_n: boolean := true;
 	signal done_c,  done_n:  std_ulogic := '0';
+	signal at:               std_ulogic := '0';
 	signal dline_c, dline_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal acc_c,   acc_n:   std_ulogic_vector(N - 1 downto 0) := (others => 'X');
 	signal pc_c,    pc_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
@@ -97,11 +98,12 @@ begin
 		end if;
 	end process;
 
+	a   <= at; 
 	cmd <= cmd_t'val(to_integer(unsigned(cmd_c)));
 	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, flags_c, cmd, acc_n, pc_n, flags_n)
 	begin
 		o       <= '0';
-		a       <= '0';
+		at      <= '0';
 		ie      <= '0';
 		ae      <= '0';
 		oe      <= '0';
@@ -221,12 +223,12 @@ begin
 					op_n   <= "0" & op_c (op_c'high downto 1);
 
 				when iLOAD =>
-					a      <= acc_c(0);
+					at     <= acc_c(0);
 					ae     <= '1';
 					acc_n  <= acc_c(0) & acc_c(acc_c'high downto 1);
 					next_n <= LOAD;
 				when iSTORE =>
-					a      <= acc_c(0);
+					at     <= acc_c(0);
 					ae     <= '1';
 					acc_n  <= acc_c(0) & acc_c(acc_c'high downto 1);
 					next_n <= STORE;
@@ -240,14 +242,14 @@ begin
 
 				when iJUMP =>
 					ae     <= '1';
-					a      <= op_c(0);
+					at     <= op_c(0);
 					op_n   <= "0"     & op_c(op_c'high downto 1);
 					pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
 					next_n <= FETCH;
 				when iJUMPZ =>
 					if flags_c(Z) = '1' then
 						ae     <= '1';
-						a      <= op_c(0);
+						at     <= op_c(0);
 						op_n   <= "0"     & op_c(op_c'high downto 1);
 						pc_n   <= op_c(0) & pc_c(pc_c'high downto 1);
 						next_n <= FETCH;
@@ -298,7 +300,7 @@ begin
 			else
 				pc_n  <= "0" & pc_c(pc_c'high downto 1);
 				adder(pc_c(0), dline_c(0), flags_c(PCC), pc_n(pc_n'high), flags_n(PCC));
-				a    <= pc_c(0);
+				at   <= pc_n(pc_n'high);
 				ae   <= '1';
 			end if;
 

@@ -90,12 +90,11 @@ architecture rtl of mem is
 	signal a_c, a_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal i_c, i_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal o_c, o_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
-	signal ou:       std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal t_c, t_n: std_ulogic := '0';
 	signal io:       boolean    := false;
 begin
 	tx <= t_c;
-	io <= a_c(a_c'high - 3) = '1';
+	io <= a_c(a_c'high) = '1' and ae = '0';
 
 	process (clk, rst)
 	begin
@@ -119,19 +118,21 @@ begin
 					if ie = '1' and ae = '0' then
 						ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0)))) := i_c;
 					end if;
-					ou <= ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0))));
+					if oe = '0' and ae = '0' then
+						o_c <= ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0))));
+					end if;
 				else
 					if ie = '1' and ae = '0' then
 						t_c <= i_c(0);
 					end if;
-					ou    <= (others => '0');
-					ou(0) <= rx;
+					o_c    <= (others => '0');
+					o_c(0) <= rx;
 				end if;
 			end if;
 		end if;
 	end process;
 
-	process (a_c, i_c, o_c, ou, i, a, oe, ie, ae, t_c)
+	process (a_c, i_c, o_c, i, a, oe, ie, ae, t_c)
 	begin
 		a_n <= a_c;
 		i_n <= i_c;
@@ -142,10 +143,6 @@ begin
 		if ae = '1' then a_n <= a      & a_c(a_c'high downto 1); end if;
 		if oe = '1' then o_n <= o_c(0) & o_c(o_c'high downto 1); end if;
 		if ie = '1' then i_n <= i      & i_c(i_c'high downto 1); end if;
-
-		if oe = '0' and ae = '0' then
-			o_n <= ou;
-		end if;
 	end process;
 end architecture;
 

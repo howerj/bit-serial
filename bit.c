@@ -209,6 +209,7 @@ static inline unsigned bits(unsigned b) {
 	return r;
 }
 
+// TODO: add in previous carry
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
 	const mw_t r = a + b;
@@ -218,6 +219,7 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	return r;
 }
 
+// TODO: add in previous borrow
 static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	assert(under);
 	const mw_t r = a - b;

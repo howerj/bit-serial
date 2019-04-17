@@ -179,12 +179,7 @@ begin
 				first_n    <= false;
 				next_n     <= ADVANCE;
 				done_n     <= '0';
-				if cmd = iSUB then -- Comparator!
-					flags_n(U) <= '1'; -- may need to rethink this...
-				end if;
-				if cmd = iADD then
-					flags_n(C) <= '0'; -- may need to rethink this...
-				end if;
+				-- Carry and Borrow flags should be cleared manually.
 			else
 				case cmd is
 				when iOR =>

@@ -114,20 +114,6 @@ begin
 				i_c <= i_n;
 				o_c <= o_n;
 				t_c <= t_n;
-				if io = false then
-					if ie = '1' and ae = '0' then
-						ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0)))) := i_c;
-					end if;
-					if oe = '0' and ae = '0' then
-						o_c <= ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0))));
-					end if;
-				else
-					if ie = '1' and ae = '0' then
-						t_c <= i_c(0);
-					end if;
-					o_c    <= (others => '0');
-					o_c(0) <= rx;
-				end if;
 			end if;
 		end if;
 	end process;
@@ -143,6 +129,23 @@ begin
 		if ae = '1' then a_n <= a      & a_c(a_c'high downto 1); end if;
 		if oe = '1' then o_n <= o_c(0) & o_c(o_c'high downto 1); end if;
 		if ie = '1' then i_n <= i      & i_c(i_c'high downto 1); end if;
+
+		-- TODO: This simulates correctly, however it will not synthesize into
+		-- anything sensible. This needs fixing!
+		if io = false then
+			if ie = '1' and ae = '0' then
+				ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0)))) := i_c;
+			end if;
+			if oe = '0' and ae = '0' then
+				o_n <= ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0))));
+			end if;
+		else
+			if ie = '1' and ae = '0' then
+				t_n <= i_c(0);
+			end if;
+			o_n    <= (others => '0');
+			o_n(0) <= rx;
+		end if;
 	end process;
 end architecture;
 

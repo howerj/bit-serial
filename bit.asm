@@ -11,8 +11,9 @@
 ; A simple test program, keeping adding one to
 ; a variable until it is larger than $10, then halt
 variable count
+set count $3
 
-	literal $0
+	clr
 label start
 	load  count
 	add   $1

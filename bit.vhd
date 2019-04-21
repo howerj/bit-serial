@@ -173,22 +173,28 @@ begin
 			end if;
 		when EXECUTE =>
 			if first_c then
+				-- Carry and Borrow flags should be cleared manually.
 				dline_n(0) <= '1';
 				first_n    <= false;
-				next_n     <= ADVANCE;
 				done_n     <= '0';
-				-- Carry and Borrow flags should be cleared manually.
+				next_n     <= ADVANCE;
+				-- flags_n(PCC) <= '0';
+				-- next_n     <= FETCH;
 			else
+--				pc_n  <= "0" & pc_c(pc_c'high downto 1);
+--				adder(pc_c(0), dline_c(0), flags_c(PCC), pc_n(pc_n'high), flags_n(PCC));
+--				a    <= pc_n(pc_n'high); -- !
+--				ae   <= '1';
+
 				case cmd is
 				when iOR =>
 					op_n  <= "0" & op_c (op_c'high  downto 1);
 					acc_n <= (op_c(0) or acc_c(0)) & acc_c(acc_c'high downto 1);
 				when iAND =>
+					acc_n <= acc_c(0) & acc_c(acc_c'high downto 1);
 					if done_c = '0' then
 						op_n  <= "0" & op_c (op_c'high downto 1);
 						acc_n <= (op_c(0) and acc_c(0)) & acc_c(acc_c'high downto 1);
-					else
-						acc_n <= acc_c(0) & acc_c(acc_c'high downto 1);
 					end if;
 				when iXOR =>
 					op_n  <= "0" & op_c (op_c'high downto 1);
@@ -278,8 +284,8 @@ begin
 				dline_n(0) <= '1';
 				first_n    <= false;
 			else
-				ie     <= '1';
-				acc_n  <= i & acc_c(acc_c'high downto 1);
+				ie    <= '1';
+				acc_n <= i & acc_c(acc_c'high downto 1);
 			end if;
 			if dline_c(dline_c'high) = '1' then
 				state_n <= ADVANCE;

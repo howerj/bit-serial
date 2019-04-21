@@ -12,7 +12,7 @@
 
 #define CONFIG_TRACER_ON (1)
 #define MSIZE            (4096u)
-#define MAX_VARS         (256)
+#define MAX_VARS         (512)
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
 typedef struct { char name[80]; int type; mw_t value; } var_t;
@@ -92,6 +92,33 @@ static int skip(char *line) {
 	return 0;
 }
 
+static int println(FILE *out, const char *fmt, va_list ap) {
+	assert(out);
+	assert(fmt);
+	const int r1 = vfprintf(out, fmt, ap);
+	const int r2 = fputc('\n', out);
+	const int r3 = fflush(out);
+	return r1 > 0 && r2 > 0 && r3 > 0 ? r1 + 1 : -1;
+}
+
+static int error(const char *fmt, ...) {
+	assert(fmt);
+	va_list ap;
+	va_start(ap, fmt);
+	println(stderr, fmt, ap);
+	va_end(ap);
+	return -1;
+}
+
+static void die(const char *fmt, ...) {
+	assert(fmt);
+	va_list ap;
+	va_start(ap, fmt);
+	println(stderr, fmt, ap);
+	va_end(ap);
+	exit(EXIT_FAILURE);
+}
+
 static int assemble(bcpu_t *b, FILE *input) {
 	assert(b);
 	assert(input);
@@ -104,57 +131,70 @@ static int assemble(bcpu_t *b, FILE *input) {
 	if (!vs || !unknown) {
 		free(vs);
 		free(unknown);
-		fprintf(stderr, "allocation failed\n");
+		error("allocation failed");
 		return -1;
 	}
 	// TODO:
-	// - Improve comments
-	// - Add directive; setting variables
-	// - Commands: 3 argument and 1 argument (nop/halt/invert) commands
-	// - Add pseudo instructions; nop, clr, relative jumps
-	// - Add calculations for lshift/rshift operand and bound checks
+	// - Read from a string not a file
+	// - Add primitive macro system
 	for (char line[256] = { 0 }; fgets(line, sizeof line, input); memset(line, 0, sizeof line)) {
 		char command[80] = { 0 }, arg1[80] = { 0 }, arg2[80] = { 0 };
 		skip(line);
+		unsigned op0 = 0, op1 = 0, op2 = 0;
 		const int args = sscanf(line, "%79s %79s %79s", command, arg1, arg2);
+		const int arg0num = sscanf(arg1, "$%x", &op0) == 1;
+		const int arg1num = sscanf(arg1, "$%x", &op1) == 1;
+		const int arg2num = sscanf(arg2, "$%x", &op2) == 1;
+
 		if (used >= data) {
-			fprintf(stderr, "program space full\n");
+			error("program space full");
 			goto fail;
 		}
 		if (args <= 0) {
 			/* do nothing */
 		} else if (args == 1) {
-			fprintf(stderr, "invalid command: %s\n", line);
-			goto fail;
+			if (arg0num) {
+				b->m[used++] = op0;
+			} else if (!strcmp(command, "nop")) {
+				assert(used < MSIZE);
+				b->m[used++] = 0;
+			} else if (!strcmp(command, "clr")) {
+				assert(used < MSIZE);
+				b->m[used++] = (instruction("literal") << 12u) | 0;
+			} else if (!strcmp(command, "invert")) {
+				assert(used < MSIZE);
+				b->m[used++] = (instruction("invert") << 12u) | 0;
+			} else {
+				error("invalid command: %s", line);
+				goto fail;
+			}
 		} else if (args == 2) {
-			unsigned op1 = 0;
-			const int arg1num = sscanf(arg1, "$%x", &op1) == 1;
 			if (arg1num && op1 > 0x0FFFu) {
-				fprintf(stderr, "operand too big: %x\n", op1);
+				error("operand too big: %x", op1);
 				goto fail;
 			}
 			const int inst = instruction(command);
 			if (inst < 0) {
 				if (!strcmp(command, "allocate")) {
 					if (!arg1num) {
-						fprintf(stderr, "invalid allocate: %s\n", arg1);
+						error("invalid allocate: %s", arg1);
 						goto fail;
 					}
 					data -= op1;
 				} else if (!strcmp(command, "variable")) {
 					const int added = reference(vs, MAX_VARS, arg1, TYPE_VAR, data--, 1);
 					if (added < 0) {
-						fprintf(stderr, "variable? %d/%s\n", added, arg1);
+						error("variable? %d/%s", added, arg1);
 						goto fail;
 					}
 				} else if (!strcmp(command, "label")) {
 					const int added = reference(vs, MAX_VARS, arg1, TYPE_LABEL, used, 1);
 					if (added < 0) {
-						fprintf(stderr, "label? %d/%s\n", added, arg1);
+						error("label? %d/%s", added, arg1);
 						goto fail;
 					}
 				} else {
-					fprintf(stderr, "unknown command: %s\n", command);
+					error("unknown command: %s", command);
 					goto fail;
 				}
 			} else {
@@ -163,7 +203,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 					if (!v) {
 						const int added = reference(unknown, MAX_VARS, arg1, TYPE_LABEL, used, 0);
 						if (added < 0) {
-							fprintf(stderr, "forward reference? %d/%s\n", added, arg1);
+							error("forward reference? %d/%s", added, arg1);
 							goto fail;
 						}
 						op1 = 0; // patch later
@@ -171,17 +211,46 @@ static int assemble(bcpu_t *b, FILE *input) {
 						op1 = v->value;
 					}
 				}
+				assert(used < MSIZE);
 				b->m[used++] = (((mw_t)inst) << 12) | op1;
 			}
 		} else if (args == 3) {
+			if (!strcmp(command, "set")) {
+				if (!arg1num) {
+					var_t *v = lookup(vs, MAX_VARS, arg1);
+					if (!v) {
+						error("unknown variable: %s", arg1);
+						goto fail;
+					}
+					op1 = v->value;
+				}
+				if (op1 > 0x0FFF) {
+					error("operand too big: %x", op1);
+					goto fail;
+				}
+
+				if (!arg2num) {
+					var_t *v = lookup(vs, MAX_VARS, arg2);
+					if (!v) {
+						error("unknown variable: %s", arg2);
+						goto fail;
+					}
+					op2 = v->value;
+				}
+				assert(op1 < MSIZE);
+				b->m[op1] = op2;
+			} else {
+				error("unknown command: %s", command);
+				goto fail;
+			}
 		} else {
-			fprintf(stderr, "invalid command: \"%s\"\n", line);
+			error("invalid command: \"%s\"", line);
 			goto fail;
 		}
 	}
 	const char *unknown_label = patch(b, vs, MAX_VARS, unknown, MAX_VARS);
 	if (unknown_label) {
-		fprintf(stderr, "invalid reference: %s\n", unknown_label);
+		error("invalid reference: %s", unknown_label);
 		goto fail;
 	}
 	free(vs);
@@ -209,22 +278,22 @@ static inline unsigned bits(unsigned b) {
 	return r;
 }
 
-// TODO: add in previous carry
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
-	const mw_t r = a + b;
+	const mw_t parry = !!(*carry & 1u);
+	const mw_t r = a + b + parry;
 	*carry &= ~1u;
-	if (r < a || r < b)
+	if (r < (a + parry) && r < (b + parry))
 		*carry |= 1;
 	return r;
 }
 
-// TODO: add in previous borrow
 static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	assert(under);
-	const mw_t r = a - b;
+	const mw_t borrow = !!(*under & 2u);
+	const mw_t r = (a - b) - borrow;
 	*under &= ~2u;
-	*under |= b > a;
+	*under |= (b + borrow) > a;
 	return r;
 }
 
@@ -299,21 +368,10 @@ static int load(bcpu_t *b, FILE *input) {
 static int save(bcpu_t *b, FILE *output) {
 	assert(b);
 	assert(output);
-	for (size_t i = 0; i < MSIZE; i++)
+	for (size_t i = 0; i < MSIZE; i++) /* option to save the rest of bcpu_t? */
 		if (fprintf(output, "%04x\n", (unsigned)(b->m[i])) < 0)
 			return -1;
 	return 0;
-}
-
-static void die(const char *fmt, ...) {
-	assert(fmt);
-	va_list ap;
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	fputc('\n', stderr);
-	fflush(stderr);
-	va_end(ap);
-	exit(EXIT_FAILURE);
 }
 
 static FILE *fopen_or_die(const char *file, const char *mode) {

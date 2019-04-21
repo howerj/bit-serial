@@ -1,15 +1,15 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O2
-.PHONY: all run simulate viewer clean
+.PHONY: all run simulation viewer clean
 
-all: bit simulate
+all: bit simulation 
 
 run: bit bit.hex
 	./bit -r bit.hex
 
-simulate: tb.ghw
+simulation: tb.ghw
 
-viewer: tb.ghw
+viewer: simulation
 	gtkwave -f $< &> /dev/null&
 
 %.hex: %.asm bit
@@ -26,7 +26,7 @@ top.o: mem.o bit.o
 tb.o: tb.vhd bit.o mem.o top.o
 
 tb: tb.o bit.o mem.o top.o
-	ghdl -e tb
+	ghdl -e $@
 
 tb.ghw: tb bit.hex
 	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable
@@ -146,17 +146,5 @@ postsyn:
 	@netgen  -pcf ${NETLIST}.pcf -w -ofmt vhdl -sim ${NETLIST}.ncd post_map.vhd
 
 clean:
-	@echo "Deleting temporary files and cleaning up directory..."
-	@rm -fv *.cf *.o *.ghw *.hex tb bit
-	@rm -vf *~ *.o trace.dat tb tb.ghw work-obj93.cf top.ngc top.ngd top_map.ngm \
-	      top.pcf top_map.ncd top.ncd top_xsim.vhd top_tsim.vhd top_tsim.sdf \
-	      top_tsim.nlf top_xst.xrpt top_ngdbuild.xrpt top_usage.xml top_summary.xml \
-	      top_map.map top_map.xrpt par_usage_statistics.html top.ptwx top.pad top_pad.csv \
-	      top.unroutes top.xpi top_par.xrpt top.twx top.nlf design.bit top_map.mrp 
-	@rm -vrf _xmsgs reports tmp xlnx_auto_0_xdb
-	@rm -vrf _xmsgs reports tmp xlnx_auto_0_xdb
-	@rm -vrf *.pdf *.htm
-	@rm -vrf *.sym
-	@rm -vrf xst/
-	@rm -vf usage_statistics_webtalk.html
+	git clean -fdx .
 

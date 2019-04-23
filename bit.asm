@@ -18,8 +18,7 @@ set count $3
 label start
 	flags $2    ; borrow flag needs to be set to perform subtraction correctly.
 	load  count ; 
-	add   $2    ; add 2 to count
-	sub   $1    ; test subtraction
+	add   $1    ; add 2 to count
 	and   $F    ; % 15
 	store count ; save result
 	flags $0    ; get flags

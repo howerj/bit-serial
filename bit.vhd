@@ -5,16 +5,16 @@
 -- Description: An N-bit, simple and small bit serial CPU
 --
 -- TODO:
--- * Use <https://gaisler.com/doc/vhdl2proc.pdf> as an example
--- of how to structure this module; put everything in records.
--- * Add interrupt handling
+-- * Add interrupt handling, which will require a way of saving
+-- the program counter somewhere.
 -- * Add flags for instruction modes; such as rotate vs shift
 -- * Try to merge ADVANCE into one of the other states if possible,
 -- or at least do the PC+1 in parallel with EXECUTE.
 -- * Try to share resource as much as possible, for example the
 -- adder/subtractor, but only if that saves space.
 -- * Add assertions, model/specify behaviour
--- * Each state has the same dline_c test, merge it
+-- * Sort out subtraction flags; should probably have another flag
+-- for the result and set initial borrow to '1'.
 
 library ieee, work, std;
 use ieee.std_logic_1164.all;
@@ -42,36 +42,41 @@ architecture rtl of bcpu is
 		iLOAD, iSTORE, iLITERAL, iFLAGS, 
 		iJUMP, iJUMPZ, i14,      i15
 	);
-	constant C:   integer := 0;
-	constant U:   integer := 1;
-	constant Z:   integer := 2;
-	constant Ng:  integer := 3;
-	constant HLT: integer := 4;
-	constant R:   integer := 5;
+	constant Cy:  integer := 0; -- Carry; set by addition
+	constant U:   integer := 1; -- Underflow/Borrow; set by subtraction 
+	constant Z:   integer := 2; -- Accumulator is zero
+	constant Ng:  integer := 3; -- Accumulator is negative
+	constant HLT: integer := 4; -- Halt CPU
+	constant R:   integer := 5; -- Reset CPU
 	constant PCC: integer := 6; -- temp used by PC carry
 
 	type bcpu_registers is record
-		state: state_t;
-		ns:    state_t;
-		first: boolean;
-		done:  std_ulogic;
-		acc:   std_ulogic_vector(N - 1 downto 0);
-		pc:    std_ulogic_vector(N - 1 downto 0);
-		op:    std_ulogic_vector(N - 1 downto 0);
-		flags: std_ulogic_vector(N - 1 downto 0);
-		cmd:   std_ulogic_vector(3 downto 0);
+		state:  state_t;    -- state machine register
+		choice: state_t;    -- computed next state
+		first:  boolean;    -- First flag (TODO: remove, use a flag)
+		done:   std_ulogic; -- Done flag  (TODO: remove, use a flag)
+		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
+		acc:    std_ulogic_vector(N - 1 downto 0); -- accumulator
+		pc:     std_ulogic_vector(N - 1 downto 0); -- program counter
+		op:     std_ulogic_vector(N - 1 downto 0); -- operand to instruction
+		flags:  std_ulogic_vector(N - 1 downto 0); -- flags register
+		cmd:    std_ulogic_vector(3 downto 0);     -- instruction
 	end record;
 
-	signal state_c, state_n: state_t := RESET;
-	signal next_c,  next_n:  state_t := RESET;
-	signal first_c, first_n: boolean := true;
-	signal done_c,  done_n:  std_ulogic := '0';
-	signal dline_c, dline_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
-	signal acc_c,   acc_n:   std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal pc_c,    pc_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal op_c,    op_n:    std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal flags_c, flags_n: std_ulogic_vector(N - 1 downto 0) := (others => 'X');
-	signal cmd_c,   cmd_n:   std_ulogic_vector(3 downto 0)     := (others => '0');
+	constant bcpu_default: bcpu_registers := (
+		state  => RESET,
+		choice => RESET,
+		first  => true,
+		done   => '0',
+		dline  => (others => '0'),
+		acc    => (others => 'X'),
+		pc     => (others => 'X'),
+		op     => (others => 'X'),
+		flags  => (others => 'X'),
+		cmd    => (others => 'X')
+	);
+
+	signal c, f: bcpu_registers := bcpu_default;
 	signal cmd: cmd_t := iOR;
 
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
@@ -82,43 +87,31 @@ architecture rtl of bcpu is
 begin
 	assert N >= 8 severity failure;
 
-	process (clk, rst)
-		procedure reset is
-		begin
-			state_c <= RESET after delay;
-			next_c  <= RESET after delay;
-			first_c <= true  after delay;
-			dline_c <= (others => '0') after delay; -- NB. Parallel reset
-			acc_c   <= acc_n   after delay;
-			pc_c    <= pc_n    after delay;
-			op_c    <= op_n    after delay;
-			cmd_c   <= cmd_n   after delay;
-			flags_c <= flags_n after delay;
-			done_c  <= '0' after delay;
-		end procedure;
+	process (clk, rst, f)
 	begin
 		if rst = '1' and asynchronous_reset then
-			reset;
+			c       <= bcpu_default after delay;
+			c.acc   <= f.acc   after delay;
+			c.pc    <= f.pc    after delay;
+			c.op    <= f.op    after delay;
+			c.flags <= f.flags after delay;
+			c.cmd   <= f.cmd   after delay;
 		elsif rising_edge(clk) then
 			if rst = '1' and not asynchronous_reset then
-				reset;
+				c       <= bcpu_default after delay;
+				c.acc   <= f.acc   after delay;
+				c.pc    <= f.pc    after delay;
+				c.op    <= f.op    after delay;
+				c.flags <= f.flags after delay;
+				c.cmd   <= f.cmd   after delay;
 			else
-				state_c <= state_n after delay;
-				next_c  <= next_n  after delay;
-				dline_c <= dline_n after delay;
-				first_c <= first_n after delay;
-				acc_c   <= acc_n   after delay;
-				pc_c    <= pc_n    after delay;
-				op_c    <= op_n    after delay;
-				cmd_c   <= cmd_n   after delay;
-				flags_c <= flags_n after delay;
-				done_c  <= done_n  after delay;
+				c <= f after delay;
 			end if;
 		end if;
 	end process;
 
-	cmd <= cmd_t'val(to_integer(unsigned(cmd_c)));
-	process (i, state_c, next_c, done_c, first_c, dline_c, acc_c, pc_c, op_c, cmd_c, flags_c, cmd, acc_n, pc_n, flags_n)
+	cmd <= cmd_t'val(to_integer(unsigned(c.cmd)));
+	process (i, c, f, cmd)
 	begin
 		o       <= '0' after delay;
 		a       <= '0' after delay;
@@ -126,145 +119,138 @@ begin
 		ae      <= '0' after delay;
 		oe      <= '0' after delay;
 		stop    <= '0' after delay;
-		dline_n <= dline_c(dline_c'high - 1 downto 0) & "0" after delay;
-		state_n <= state_c after delay;
-		next_n  <= next_c  after delay;
-		first_n <= first_c after delay;
-		acc_n   <= acc_c   after delay;
-		pc_n    <= pc_c    after delay;
-		op_n    <= op_c    after delay;
-		cmd_n   <= cmd_c   after delay;
-		done_n  <= done_c  after delay;
-		flags_n <= flags_c after delay;
 
-		if dline_c(dline_c'high) = '1' then
-			state_n <= next_c after delay;
-			first_n <= true   after delay;
+		f       <= c;
+		f.dline <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
+
+		if c.dline(c.dline'high) = '1' then
+			f.state <= c.choice after delay;
+			f.first <= true     after delay;
 		end if;
 
-		if dline_c(dline_c'high - 4) = '1' then
-			done_n <= '1' after delay;
+		if c.dline(c.dline'high - 4) = '1' then
+			f.done <= '1' after delay;
 		end if;
 
-		case state_c is
+		case c.state is
 		when RESET   =>
-			next_n <= FETCH after delay;
-			if first_c then
-				dline_n(0) <= '1' after delay;
-				first_n    <= false after delay;
+			f.choice <= FETCH after delay;
+			if c.first then
+				f.dline(0) <= '1' after delay;
+				f.first    <= false after delay;
 			else
 				oe      <= '1' after delay;
 				ae      <= '1' after delay;
-				acc_n   <= "0" & acc_c(acc_c'high downto 1) after delay;
-				pc_n    <= "0" & pc_c(pc_c'high downto 1) after delay;
-				op_n    <= "0" & op_c(op_c'high downto 1) after delay;
-				flags_n <= "0" & flags_c(flags_c'high downto 1) after delay;
+				f.acc   <= "0" & c.acc(c.acc'high downto 1) after delay;
+				f.pc    <= "0" & c.pc(c.pc'high downto 1) after delay;
+				f.op    <= "0" & c.op(c.op'high downto 1) after delay;
+				f.flags <= "0" & c.flags(c.flags'high downto 1) after delay;
 			end if;
 
 		when FETCH   =>
-			if first_c then
-				dline_n(0)  <= '1'   after delay;
-				first_n     <= false after delay;
-				flags_n(Z)  <= '1'   after delay;
-				flags_n(Ng) <= acc_c(acc_c'high) after delay;
-				done_n      <= '0' after delay;
+			if c.first then
+				f.dline(0)  <= '1'   after delay;
+				f.first     <= false after delay;
+				f.flags(Z)  <= '1'   after delay;
+				f.flags(Ng) <= c.acc(c.acc'high) after delay;
+				f.done      <= '0' after delay;
 			else
 				ie          <= '1' after delay;
 
-				acc_n <= acc_c(0) & acc_c(acc_c'high downto 1) after delay;
-				if acc_c(0) = '1' then -- determine flag status before EXECUTE
-					flags_n(Z) <= '0' after delay;
+				f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+				if c.acc(0) = '1' then -- determine flag status before EXECUTE
+					f.flags(Z) <= '0' after delay;
 				end if;
 
-				if done_c = '0' then
-					op_n    <= i & op_c(op_c'high downto 1) after delay;
+				if c.done = '0' then
+					f.op    <= i & c.op(c.op'high downto 1) after delay;
 				else
-					cmd_n   <= i   & cmd_c(cmd_c'high downto 1) after delay;
-					op_n    <= "0" & op_c (op_c'high  downto 1) after delay;
+					f.cmd   <= i   & c.cmd(c.cmd'high downto 1) after delay;
+					f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				end if;
 			end if;
 
-			   if flags_c(HLT) = '1' then
-				next_n <= HALT after delay;
-			elsif flags_c(R) = '1' then
-				next_n <= RESET after delay;
+			   if c.flags(HLT) = '1' then
+				f.choice <= HALT after delay;
+			elsif c.flags(R) = '1' then
+				f.choice <= RESET after delay;
 			else
-				next_n <= EXECUTE after delay;
+				f.choice <= EXECUTE after delay;
 			end if;
 		when EXECUTE =>
-			next_n     <= ADVANCE after delay;
-			if first_c then
+			f.choice     <= ADVANCE after delay;
+			if c.first then
 				-- Carry and Borrow flags should be cleared manually.
-				dline_n(0) <= '1'   after delay;
-				first_n    <= false after delay;
-				done_n     <= '0'   after delay;
+				f.dline(0) <= '1'   after delay;
+				f.first    <= false after delay;
+				f.done     <= '0'   after delay;
 			else
 				case cmd is
 				when iOR =>
-					op_n  <= "0" & op_c (op_c'high  downto 1) after delay;
-					acc_n <= (op_c(0) or acc_c(0)) & acc_c(acc_c'high downto 1) after delay;
+					f.op  <= "0" & c.op (c.op'high  downto 1) after delay;
+					f.acc <= (c.op(0) or c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iAND =>
-					acc_n <= acc_c(0) & acc_c(acc_c'high downto 1) after delay;
-					if done_c = '0' then
-						op_n  <= "0" & op_c (op_c'high downto 1) after delay;
-						acc_n <= (op_c(0) and acc_c(0)) & acc_c(acc_c'high downto 1) after delay;
+					f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+					if c.done = '0' then
+						f.op  <= "0" & c.op (c.op'high downto 1) after delay;
+						f.acc <= (c.op(0) and c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 					end if;
 				when iXOR =>
-					op_n  <= "0" & op_c (op_c'high downto 1) after delay;
-					acc_n <= (op_c(0) xor acc_c(0)) & acc_c(acc_c'high downto 1) after delay;
+					f.op  <= "0" & c.op (c.op'high downto 1) after delay;
+					f.acc <= (c.op(0) xor c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iINVERT =>
-					acc_n <= (not acc_c(0)) & acc_c(acc_c'high downto 1) after delay;
+					f.acc <= (not c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 
 				when iADD =>
-					acc_n <= "0" & acc_c(acc_c'high downto 1) after delay;
-					op_n  <= "0" & op_c(op_c'high downto 1)   after delay;
-					adder(acc_c(0), op_c(0), flags_c(C), acc_n(acc_n'high), flags_n(C));
+					f.acc <= "0" & c.acc(c.acc'high downto 1) after delay;
+					f.op  <= "0" & c.op(c.op'high downto 1)   after delay;
+					adder(c.acc(0), c.op(0), c.flags(Cy), f.acc(f.acc'high), f.flags(Cy));
 				when iSUB =>
-					acc_n <= "0" & acc_c(acc_c'high downto 1) after delay;
-					op_n  <= "0" & op_c(op_c'high downto 1)   after delay;
-					adder(acc_c(0), not op_c(0), flags_c(U), acc_n(acc_n'high), flags_n(U));
+					f.acc <= "0" & c.acc(c.acc'high downto 1) after delay;
+					f.op  <= "0" & c.op(c.op'high downto 1)   after delay;
+					adder(c.acc(0), not c.op(0), c.flags(U), f.acc(f.acc'high), f.flags(U));
 				when iLSHIFT =>
-					if op_c(0) = '1' then
-						acc_n  <= acc_c(acc_c'high - 1 downto 0) & "0" after delay;
+					if c.op(0) = '1' then
+						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
 					end if;
-					op_n   <= "0" & op_c (op_c'high downto 1) after delay;
+					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 				when iRSHIFT =>
-					if op_c(0) = '1' then
-						acc_n  <= "0" & acc_c(acc_c'high downto 1) after delay;
+					if c.op(0) = '1' then
+						f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
 					end if;
-					op_n   <= "0" & op_c (op_c'high downto 1) after delay;
+					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 
 				when iLOAD => -- Could set a flag so we loaded/store via accumulator 
 					ae     <=     '1' after delay;
-					a      <= op_c(0) after delay;
-					op_n   <= op_c(0) & op_c(op_c'high downto 1) after delay;
-					next_n <= LOAD after delay;
+					a      <= c.op(0) after delay;
+					f.op   <= c.op(0) & c.op(c.op'high downto 1) after delay;
+					f.choice <= LOAD after delay;
 				when iSTORE =>
 					ae     <=     '1' after delay;
-					a      <= op_c(0) after delay;
-					op_n   <= op_c(0) & op_c(op_c'high downto 1) after delay;
-					next_n <= STORE after delay;
+					a      <= c.op(0) after delay;
+					f.op   <= c.op(0) & c.op(c.op'high downto 1) after delay;
+					f.choice <= STORE after delay;
 				when iLITERAL =>
-					acc_n  <= op_c(0) & acc_c(acc_c'high downto 1) after delay;
-					op_n   <=     "0" & op_c (op_c'high downto 1)  after delay;
+					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
+					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
 				when iFLAGS =>
-					acc_n   <= flags_c(0) & acc_c(acc_c'high downto 1) after delay;
-					flags_n <=    op_c(0) & flags_c(flags_c'high downto 1) after delay;
-					op_n    <=        "0" & op_c(op_c'high downto 1) after delay;
+					f.acc   <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
+					f.flags <=    c.op(0) & c.flags(c.flags'high downto 1) after delay;
+					f.op    <=        "0" & c.op(c.op'high downto 1) after delay;
 
 				when iJUMP =>
-					ae     <= '1' after delay;
-					a      <= op_c(0) after delay;
-					op_n   <= "0"     & op_c(op_c'high downto 1) after delay;
-					pc_n   <= op_c(0) & pc_c(pc_c'high downto 1) after delay;
-					next_n <= FETCH after delay;
+					ae     <=     '1' after delay;
+					a      <= c.op(0) after delay;
+					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+					f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
+					f.choice <= FETCH after delay;
 				when iJUMPZ =>
-					if flags_c(Z) = '1' then
-						ae     <= '1' after delay;
-						a      <= op_c(0) after delay;
-						op_n   <= "0"     & op_c(op_c'high downto 1) after delay;
-						pc_n   <= op_c(0) & pc_c(pc_c'high downto 1) after delay;
-						next_n <= FETCH after delay;
+					if c.flags(Z) = '1' then
+						ae     <=     '1' after delay;
+						a      <= c.op(0) after delay;
+						f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+						f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
+						f.choice <= FETCH after delay;
 					end if;
 				when i14 => -- N/A
 				when i15 => -- N/A
@@ -272,39 +258,39 @@ begin
 			end if;
 
 		when STORE   =>
-			next_n <= ADVANCE after delay;
-			if first_c then
-				dline_n(0) <= '1'   after delay;
-				first_n    <= false after delay;
+			f.choice <= ADVANCE after delay;
+			if c.first then
+				f.dline(0) <= '1'   after delay;
+				f.first    <= false after delay;
 			else
-				o      <= acc_c(0) after delay;
-				oe     <= '1' after delay;
-				acc_n  <= acc_c(0) & acc_c(acc_c'high downto 1) after delay;
+				o      <= c.acc(0) after delay;
+				oe     <= '1'      after delay;
+				f.acc  <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 			end if;
 		when LOAD    =>
-			next_n <= ADVANCE after delay;
-			if first_c then
-				dline_n(0) <= '1'   after delay;
-				first_n    <= false after delay;
+			f.choice <= ADVANCE after delay;
+			if c.first then
+				f.dline(0) <= '1'   after delay;
+				f.first    <= false after delay;
 			else
 				ie    <= '1' after delay;
-				acc_n <= i & acc_c(acc_c'high downto 1) after delay;
+				f.acc <= i & c.acc(c.acc'high downto 1) after delay;
 			end if;
 		when ADVANCE =>
-			next_n <= FETCH after delay;
-			if first_c then
-				dline_n(0)   <= '1'   after delay;
-				first_n      <= false after delay;
-				flags_n(PCC) <= '0'   after delay;
+			f.choice <= FETCH after delay;
+			if c.first then
+				f.dline(0)   <= '1'   after delay;
+				f.first      <= false after delay;
+				f.flags(PCC) <= '0'   after delay;
 			else
-				pc_n  <= "0" & pc_c(pc_c'high downto 1) after delay;
-				adder(pc_c(0), dline_c(0), flags_c(PCC), pc_n(pc_n'high), flags_n(PCC));
-				a    <= pc_n(pc_n'high) after delay; -- !
+				f.pc  <= "0" & c.pc(c.pc'high downto 1) after delay;
+				adder(c.pc(0), c.dline(0), c.flags(PCC), f.pc(f.pc'high), f.flags(PCC));
+				a    <= f.pc(f.pc'high) after delay; -- !
 				ae   <= '1' after delay;
 			end if;
 
 		when HALT => stop <= '1' after delay;
-		when others => next_n <= RESET;
+		when others => f.choice <= RESET;
 		end case;
 	end process;
 end architecture;

@@ -13,6 +13,7 @@ architecture testing of tb is
 	constant delay:              time     := 0 ns;
 	constant asynchronous_reset: boolean  := false;
 
+	signal ld:     std_ulogic_vector(7 downto 0) := (others => '0');
 	signal stop:   boolean    := false;
 	signal clk:    std_ulogic := '0';
 	signal rst:    std_ulogic := '1';
@@ -27,6 +28,7 @@ begin
 		port map (
 			clk => clk, 
 --			rst => rst, 
+			ld  => ld,
 			tx  => tx, 
 			rx  => rx);
 

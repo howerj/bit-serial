@@ -12,18 +12,17 @@ entity top is
 		clk:         in std_ulogic;
 --		rst:         in std_ulogic;
 		tx:         out std_ulogic;
-		rx:          in std_ulogic);
+		rx:          in std_ulogic;
+		ld:          in std_ulogic_vector(7 downto 0));
 end entity;
 
 architecture rtl of top is
-	constant W:   positive := N - 4;
+	constant W:              positive := N - 4;
 	signal rst:              std_ulogic := '0';
 	signal i:                std_ulogic := 'X';
 	signal o, a, oe, ie, ae: std_ulogic := 'X';
 	signal stop:             std_ulogic := 'X';
 begin
-	-- TODO: Add UART module in
-
 	program: entity work.mem
 		generic map(
 			asynchronous_reset => asynchronous_reset,

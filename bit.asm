@@ -13,28 +13,19 @@
 variable count
 set count $3
 
+	flags $0
 	clr
 label start
-	load  count
-	add   $1
-	and   $F
-	store count
-	flags $0
-	and   $4
-	jumpz start
+	flags $2    ; borrow flag needs to be set to perform subtraction correctly.
+	load  count ; 
+	add   $2    ; add 2 to count
+	sub   $1    ; test subtraction
+	and   $F    ; % 15
+	store count ; save result
+	flags $0    ; get flags
+	and   $4    ; mask off carry flag
+	jumpz start ; jump back to start if non-zero
 
 label end
 	flags $10 ; halt
  
-; ; Using sub
-; label start
-; load count
-; add $1
-; store count
-; sub $F
-; flags $0
-; jumpz end
-; jump start
-; 
-; label end
-; flags $10 ; halt

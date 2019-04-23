@@ -25,14 +25,14 @@ TIMESPEC TS_sys_clk_pin = PERIOD sys_clk_pin 100000 kHz;
 # Net "sw<7>" LOC = T5  | IOSTANDARD = LVCMOS33;               # switch 7
 # 
 # # Output: Individual LEDs
-# Net "ld<0>" LOC = U16 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 0
-# Net "ld<1>" LOC = V16 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 1
-# Net "ld<2>" LOC = U15 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 2
-# Net "ld<3>" LOC = V15 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 3
-# Net "ld<4>" LOC = M11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 4
-# Net "ld<5>" LOC = N11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 5
-# Net "ld<6>" LOC = R11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 6
-# Net "ld<7>" LOC = T11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 7
+Net "ld<0>" LOC = U16 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 0
+Net "ld<1>" LOC = V16 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 1
+Net "ld<2>" LOC = U15 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 2
+Net "ld<3>" LOC = V15 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 3
+Net "ld<4>" LOC = M11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 4
+Net "ld<5>" LOC = N11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 5
+Net "ld<6>" LOC = R11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 6
+Net "ld<7>" LOC = T11 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 7
 # 
 # # Output: 7/8 Segment LEDs
 # Net "an<0>" LOC = P17 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # anode 0

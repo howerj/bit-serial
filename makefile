@@ -9,7 +9,7 @@ run: bit bit.hex
 
 simulation: tb.ghw
 
-viewer: simulation
+viewer: tb.ghw simulation
 	gtkwave -f $< &> /dev/null&
 
 %.hex: %.asm bit
@@ -21,11 +21,13 @@ bit: bit.c
 %.o: %.vhd
 	ghdl -a -g $<
 
-top.o: mem.o bit.o
+top.o: top.vhd mem.o bit.o uart.o
 
-tb.o: tb.vhd bit.o mem.o top.o
+uart.o: uart.vhd util.o
 
-tb: tb.o bit.o mem.o top.o
+tb.o: tb.vhd bit.o mem.o top.o uart.o
+
+tb: tb.o bit.o mem.o top.o uart.o util.o
 	ghdl -e $@
 
 tb.ghw: tb bit.hex
@@ -34,6 +36,8 @@ tb.ghw: tb bit.hex
 SOURCES = \
 	top.vhd \
 	bit.vhd \
+	uart.vhd \
+	util.vhd \
 	mem.vhd
 
 OBJECTS = ${SOURCES:.vhd=.o}
@@ -69,7 +73,7 @@ tmp/top.xst: tmp tmp/_xmsgs tmp/top.lso tmp/top.lso
 	    echo "-ofn top"; \
 	    echo "-p xc6slx16-csg324-3"; \
 	    echo "-top top"; \
-	    echo "-opt_mode speed"; \
+	    echo "-opt_mode area"; \
 	    echo "-opt_level 2" \
 	) > tmp/top.xst
 

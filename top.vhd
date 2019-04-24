@@ -13,7 +13,7 @@ entity top is
 --		rst:         in std_ulogic;
 		tx:         out std_ulogic;
 		rx:          in std_ulogic;
-		ld:          in std_ulogic_vector(7 downto 0));
+		ld:         out std_ulogic_vector(7 downto 0));
 end entity;
 
 architecture rtl of top is
@@ -32,7 +32,7 @@ begin
 			N                  => N)
 		port map (
 			clk => clk, rst => rst,
-			tx => tx, rx => rx,
+			tx => tx, rx => rx, ld => ld,
 			i => o,
 			o => i,
 			a => a, oe => ie, ie => oe, ae => ae);

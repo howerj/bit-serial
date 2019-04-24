@@ -15,6 +15,7 @@ entity mem is
 		rst:         in std_ulogic;
 		rx:          in std_ulogic;
 		tx:         out std_ulogic;
+		ld:         out std_ulogic_vector(7 downto 0);
 		i, a:        in std_ulogic;
 		o:          out std_ulogic;
    		oe, ie, ae:  in std_ulogic);
@@ -90,6 +91,7 @@ architecture rtl of mem is
 	signal a_c,    a_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal i_c,    i_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
 	signal o_c,    o_n: std_ulogic_vector(N - 1 downto 0) := (others => '0');
+	signal ld_c,  ld_n: std_ulogic_vector(ld'range)       := (others => '0');
 	signal t_c,    t_n: std_ulogic := '0';
 	signal ie_c,  ie_n: std_ulogic := '0';
 	signal io,   write: boolean    := false;
@@ -98,27 +100,30 @@ begin
 	io    <= a_c(a_c'high) = '1' and ae = '0';
 	ie_n  <= ie;
 	write <= true when (ie_c and (ie_c xor ie_n)) = '1' else false;
-
+	ld    <= ld_c;
 	process (clk, rst)
 	begin
 		if rst = '1' and asynchronous_reset then
-			a_c <= (others => '0'); -- parallel!
-			i_c <= (others => '0'); -- parallel!
-			o_c <= (others => '0'); -- parallel!
-			t_c <= '0';
+			a_c  <= (others => '0'); -- parallel!
+			i_c  <= (others => '0'); -- parallel!
+			o_c  <= (others => '0'); -- parallel!
+			ld_c <= (others => '0'); -- parallel!
+			t_c  <= '0';
 			ie_c <= '0';
 		elsif rising_edge(clk) then
 			if rst = '1' and not asynchronous_reset then
-				a_c <= (others => '0'); -- parallel!
-				i_c <= (others => '0'); -- parallel!
-				o_c <= (others => '0'); -- parallel!
-				t_c <= '0';
+				a_c  <= (others => '0'); -- parallel!
+				i_c  <= (others => '0'); -- parallel!
+				o_c  <= (others => '0'); -- parallel!
+				ld_c <= (others => '0'); -- parallel!
+				t_c  <= '0';
 				ie_c <= '0';
 			else
 				a_c <= a_n;
 				i_c <= i_n;
 				o_c <= o_n;
 				t_c <= t_n;
+				ld_c <= ld_n;
 				ie_c <= ie_n;
 
 				if oe = '0' and ae = '0' then
@@ -134,18 +139,20 @@ begin
 					if io = false then
 						ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0)))) := i_c;
 					else
-						t_c <= i_c(0);
+						ld_c <= i_c(ld_c'range);
+						t_c <= i_c(8);
 					end if;
 				end if;
 			end if;
 		end if;
 	end process;
 
-	process (a_c, i_c, o_c, i, a, oe, ie, ae, t_c)
+	process (a_c, i_c, o_c, i, a, oe, ie, ae, t_c, ld_c)
 	begin
 		a_n <= a_c;
 		i_n <= i_c;
 		o_n <= o_c;
+		ld_n <= ld_c;
 		o   <= o_c(0);
 		t_n <= t_c;
 

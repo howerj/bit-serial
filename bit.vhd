@@ -88,22 +88,21 @@ begin
 	assert N >= 8 severity failure;
 
 	process (clk, rst, f)
-	begin
-		if rst = '1' and asynchronous_reset then
+		procedure reset is
+		begin
 			c       <= bcpu_default after delay;
 			c.acc   <= f.acc   after delay;
 			c.pc    <= f.pc    after delay;
 			c.op    <= f.op    after delay;
 			c.flags <= f.flags after delay;
 			c.cmd   <= f.cmd   after delay;
+		end procedure;
+	begin
+		if rst = '1' and asynchronous_reset then
+			reset;
 		elsif rising_edge(clk) then
 			if rst = '1' and not asynchronous_reset then
-				c       <= bcpu_default after delay;
-				c.acc   <= f.acc   after delay;
-				c.pc    <= f.pc    after delay;
-				c.op    <= f.op    after delay;
-				c.flags <= f.flags after delay;
-				c.cmd   <= f.cmd   after delay;
+				reset;
 			else
 				c <= f after delay;
 			end if;

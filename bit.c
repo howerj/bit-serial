@@ -15,6 +15,7 @@
 #define MAX_VARS         (512)
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
+typedef struct { FILE *in, *out; mw_t ch, leds; } bcpu_io_t;
 typedef struct { char name[80]; int type; mw_t value; } var_t;
 enum { TYPE_VAR, TYPE_LABEL };
 
@@ -142,9 +143,9 @@ static int assemble(bcpu_t *b, FILE *input) {
 		skip(line);
 		unsigned op0 = 0, op1 = 0, op2 = 0;
 		const int args = sscanf(line, "%79s %79s %79s", command, arg1, arg2);
-		const int arg0num = sscanf(arg1, "$%x", &op0) == 1;
-		const int arg1num = sscanf(arg1, "$%x", &op1) == 1;
-		const int arg2num = sscanf(arg2, "$%x", &op2) == 1;
+		const int arg0num = sscanf(command, "$%x", &op0) == 1;
+		const int arg1num = sscanf(arg1,    "$%x", &op1) == 1;
+		const int arg2num = sscanf(arg2,    "$%x", &op2) == 1;
 
 		if (used >= data) {
 			error("program space full");
@@ -165,8 +166,12 @@ static int assemble(bcpu_t *b, FILE *input) {
 				assert(used < MSIZE);
 				b->m[used++] = (instruction("invert") << 12u) | 0;
 			} else {
-				error("invalid command: %s", line);
-				goto fail;
+				var_t *v = lookup(vs, MAX_VARS, command);
+				if (!v) {
+					error("invalid command: %s", line);
+					goto fail;
+				}
+				b->m[used++] = v->value;
 			}
 		} else if (args == 2) {
 			if (arg1num && op1 > 0x0FFFu) {
@@ -262,14 +267,20 @@ fail:
 	return -1;
 }
 
-static inline int trace(bcpu_t *b, FILE *tracer, unsigned cycles, const mw_t pc, const mw_t flg, const mw_t acc, const mw_t op1, const mw_t cmd) {
+static inline int trace(bcpu_t *b, bcpu_io_t *io, FILE *tracer, 
+		unsigned cycles, const mw_t pc, const mw_t flg, 
+		const mw_t acc, const mw_t op1, const mw_t cmd) {
 	assert(b);
+	assert(io);
 	if (!tracer)
 		return 0;
 	assert(cmd < (sizeof(commands)/sizeof(commands[0])));
 	char cbuf[8] = { 0 };
 	snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]);
-	return fprintf(tracer, "%4x: %4x %2x:%s %4x %4x %4x\n", cycles, (unsigned)pc, (unsigned)cmd, cbuf, (unsigned)acc, (unsigned)op1, (unsigned)flg);
+	return fprintf(tracer, "%4x: %4x %2x:%s %4x %4x %4x %4x\n", 
+			cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
+			(unsigned)acc, (unsigned)op1, (unsigned)flg, 
+			(unsigned)io->leds);
 }
 
 static inline unsigned bits(unsigned b) {
@@ -290,17 +301,34 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 
 static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	assert(under);
-	const mw_t borrow = !!(*under & 2u);
-	const mw_t r = (a - b) - borrow;
+	const mw_t r = a - b;
 	*under &= ~2u;
-	*under |= (b + borrow) > a;
+	*under |= b > a;
 	return r;
 }
 
-static int bcpu(bcpu_t *b, FILE *in, FILE *out, FILE *tracer, const unsigned cycles) {
+static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t addr) {
 	assert(b);
-	assert(in);
-	assert(out);
+	assert(io);
+	if (addr & 0x8000u) { /* io */
+		return 0;
+	}
+	return b->m[addr % MSIZE];
+}
+
+static inline void bstore(bcpu_t *b, bcpu_io_t *io, mw_t addr, mw_t val) {
+	assert(b);
+	assert(io);
+	if (addr & 0x8000u) { /* io */
+		io->leds = val;
+	} else {
+		b->m[addr % MSIZE] = val;
+	}
+}
+
+static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
+	assert(b);
+	assert(io);
 	int r = 0;
 	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
 	const unsigned forever = cycles == 0;
@@ -310,7 +338,7 @@ static int bcpu(bcpu_t *b, FILE *in, FILE *out, FILE *tracer, const unsigned cyc
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 		if (CONFIG_TRACER_ON)
-			trace(b, tracer, count, pc, flg, acc, op1, cmd);
+			trace(b, io, tracer, count, pc, flg, acc, op1, cmd);
 		if (flg & (1u << 4)) /* HALT */
 			goto halt;
 		if (flg & (1u << 5)) { /* RESET */
@@ -333,8 +361,8 @@ static int bcpu(bcpu_t *b, FILE *in, FILE *out, FILE *tracer, const unsigned cyc
 		case 0x6: acc <<= bits(op1);         break; /* LSHIFT  */
 		case 0x7: acc >>= bits(op1);         break; /* RSHIFT  */
 
-		case 0x8: acc = m[op1 % MSIZE];      break; /* LOAD    */
-		case 0x9: m[op1 % MSIZE] = acc;      break; /* STORE   */
+		case 0x8: acc = bload(b, io, op1);   break; /* LOAD    */
+		case 0x9: bstore(b, io, op1, acc);   break; /* STORE   */
 		case 0xA: acc = op1;                 break; /* LITERAL */
 		case 0xB: acc = flg; flg = op1;      break; /* FLAGS */
 
@@ -386,6 +414,7 @@ static FILE *fopen_or_die(const char *file, const char *mode) {
 int main(int argc, char **argv) {
 	int compile = 0, run = 0, cycles = 0x1000;
 	static bcpu_t b = { 0, 0, 0, { 0 } };
+	bcpu_io_t io = { .in = stdin, .out = stdout };
 	FILE *program = stdin, *trace = stderr, *hex = NULL;
 	if (argc < 2)
 		die("usage: %s -trashf input? out.hex?", argv[0]);
@@ -408,7 +437,7 @@ int main(int argc, char **argv) {
 			die("loading hex file failed");
 	if (hex && save(&b, hex) < 0)
 		die("saving file failed");
-	if (run && bcpu(&b, stdin, stdout, trace, cycles) < 0)
+	if (run && bcpu(&b, &io, trace, cycles) < 0)
 		die("running failed");
 	return 0; /* dying cleans everything up */
 }

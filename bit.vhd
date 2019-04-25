@@ -13,6 +13,9 @@
 -- * Try to share resource as much as possible, for example the
 -- adder/subtractor, but only if that saves space.
 -- * Add assertions, model/specify behaviour
+--   - Assert only one bit set in dline, and one bit always set
+--   when in certain states and not-first
+--   - Assert state transitions
 -- * Sort out subtraction flags; should probably have another flag
 -- for the result and set initial borrow to '1'.
 
@@ -42,19 +45,20 @@ architecture rtl of bcpu is
 		iLOAD, iSTORE, iLITERAL, iFLAGS, 
 		iJUMP, iJUMPZ, i14,      i15
 	);
-	constant Cy:  integer := 0; -- Carry; set by addition
-	constant U:   integer := 1; -- Underflow/Borrow; set by subtraction 
-	constant Z:   integer := 2; -- Accumulator is zero
-	constant Ng:  integer := 3; -- Accumulator is negative
-	constant HLT: integer := 4; -- Halt CPU
-	constant R:   integer := 5; -- Reset CPU
-	constant PCC: integer := 6; -- temp used by PC carry
+	constant Cy:   integer := 0; -- Carry; set by addition
+	constant U:    integer := 1; -- Underflow/Borrow; set by subtraction 
+	constant Z:    integer := 2; -- Accumulator is zero
+	constant Ng:   integer := 3; -- Accumulator is negative
+	constant HLT:  integer := 4; -- Halt CPU
+	constant R:    integer := 5; -- Reset CPU
+	constant PCC:  integer := 6; -- temp used by PC carry
+	constant DONE: integer := 7; -- done processing operand flag (processing last four bits)
+	constant UT:   integer := 8; -- temporary underflow flag
 
 	type bcpu_registers is record
 		state:  state_t;    -- state machine register
 		choice: state_t;    -- computed next state
 		first:  boolean;    -- First flag (TODO: remove, use a flag)
-		done:   std_ulogic; -- Done flag  (TODO: remove, use a flag)
 		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
 		acc:    std_ulogic_vector(N - 1 downto 0); -- accumulator
 		pc:     std_ulogic_vector(N - 1 downto 0); -- program counter
@@ -67,7 +71,6 @@ architecture rtl of bcpu is
 		state  => RESET,
 		choice => RESET,
 		first  => true,
-		done   => '0',
 		dline  => (others => '0'),
 		acc    => (others => 'X'),
 		pc     => (others => 'X'),
@@ -78,6 +81,7 @@ architecture rtl of bcpu is
 
 	signal c, f: bcpu_registers := bcpu_default;
 	signal cmd: cmd_t := iOR;
+	signal add1, add2, acin, ares, acout: std_ulogic := '0';
 
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
@@ -86,6 +90,8 @@ architecture rtl of bcpu is
 	end procedure;
 begin
 	assert N >= 8 severity failure;
+	adder (add1, add2, acin, ares, acout);         -- shared adder
+	cmd <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 
 	process (clk, rst, f)
 		procedure reset is
@@ -109,16 +115,17 @@ begin
 		end if;
 	end process;
 
-	cmd <= cmd_t'val(to_integer(unsigned(c.cmd)));
-	process (i, c, f, cmd)
+	process (i, c, cmd, ares, acout)
 	begin
-		o       <= '0' after delay;
-		a       <= '0' after delay;
-		ie      <= '0' after delay;
-		ae      <= '0' after delay;
-		oe      <= '0' after delay;
-		stop    <= '0' after delay;
-
+		o    <= '0' after delay;
+		a    <= '0' after delay;
+		ie   <= '0' after delay;
+		ae   <= '0' after delay;
+		oe   <= '0' after delay;
+		stop <= '0' after delay;
+		add1 <= '0' after delay;
+		add2 <= '0' after delay;
+		acin <= '0' after delay;
 		f       <= c;
 		f.dline <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
 
@@ -128,31 +135,30 @@ begin
 		end if;
 
 		if c.dline(c.dline'high - 4) = '1' then
-			f.done <= '1' after delay;
+			f.flags(DONE) <= '1' after delay;
 		end if;
 
 		case c.state is
 		when RESET   =>
-			f.choice <= FETCH after delay;
+			f.choice <= FETCH;
 			if c.first then
-				f.dline(0) <= '1' after delay;
-				f.first    <= false after delay;
+				f.dline(0)  <= '1'   after delay;
+				f.first     <= false after delay;
 			else
-				oe      <= '1' after delay;
 				ae      <= '1' after delay;
+				oe      <= '1' after delay;
 				f.acc   <= "0" & c.acc(c.acc'high downto 1) after delay;
-				f.pc    <= "0" & c.pc(c.pc'high downto 1) after delay;
-				f.op    <= "0" & c.op(c.op'high downto 1) after delay;
+				f.pc    <= "0" & c.pc (c.pc'high  downto 1) after delay;
+				f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				f.flags <= "0" & c.flags(c.flags'high downto 1) after delay;
 			end if;
-
 		when FETCH   =>
 			if c.first then
 				f.dline(0)  <= '1'   after delay;
 				f.first     <= false after delay;
 				f.flags(Z)  <= '1'   after delay;
 				f.flags(Ng) <= c.acc(c.acc'high) after delay;
-				f.done      <= '0' after delay;
+				f.flags(DONE)      <= '0' after delay;
 			else
 				ie          <= '1' after delay;
 
@@ -161,7 +167,7 @@ begin
 					f.flags(Z) <= '0' after delay;
 				end if;
 
-				if c.done = '0' then
+				if c.flags(DONE) = '0' then
 					f.op    <= i & c.op(c.op'high downto 1) after delay;
 				else
 					f.cmd   <= i   & c.cmd(c.cmd'high downto 1) after delay;
@@ -180,17 +186,18 @@ begin
 			f.choice     <= ADVANCE after delay;
 			if c.first then
 				-- Carry and Borrow flags should be cleared manually.
-				f.dline(0) <= '1'   after delay;
-				f.first    <= false after delay;
-				f.done     <= '0'   after delay;
+				f.dline(0)    <= '1'   after delay;
+				f.first       <= false after delay;
+				f.flags(DONE) <= '0'   after delay;
+				f.flags(UT)   <= '1'   after delay; -- subtract one 
 			else
-				case cmd is
+				case cmd is -- ALU
 				when iOR =>
 					f.op  <= "0" & c.op (c.op'high  downto 1) after delay;
 					f.acc <= (c.op(0) or c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iAND =>
 					f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-					if c.done = '0' then
+					if c.flags(DONE) = '0' then
 						f.op  <= "0" & c.op (c.op'high downto 1) after delay;
 						f.acc <= (c.op(0) and c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 					end if;
@@ -203,11 +210,20 @@ begin
 				when iADD =>
 					f.acc <= "0" & c.acc(c.acc'high downto 1) after delay;
 					f.op  <= "0" & c.op(c.op'high downto 1)   after delay;
-					adder(c.acc(0), c.op(0), c.flags(Cy), f.acc(f.acc'high), f.flags(Cy));
+					add1  <=    c.acc(0) after delay;
+					add2  <=     c.op(0) after delay;
+					acin  <= c.flags(Cy) after delay;
+					f.acc(f.acc'high) <= ares after delay;
+					f.flags(Cy) <= acout after delay;
 				when iSUB =>
 					f.acc <= "0" & c.acc(c.acc'high downto 1) after delay;
 					f.op  <= "0" & c.op(c.op'high downto 1)   after delay;
-					adder(c.acc(0), not c.op(0), c.flags(U), f.acc(f.acc'high), f.flags(U));
+					add1  <=    c.acc(0) after delay;
+					add2  <= not c.op(0) after delay;
+					acin  <= c.flags(UT) after delay;
+					f.acc(f.acc'high) <= ares after delay;
+					f.flags(UT) <= acout after delay;
+					f.flags(U)  <= acout after delay;
 				when iLSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
@@ -282,14 +298,18 @@ begin
 				f.first      <= false after delay;
 				f.flags(PCC) <= '0'   after delay;
 			else
-				f.pc  <= "0" & c.pc(c.pc'high downto 1) after delay;
-				adder(c.pc(0), c.dline(0), c.flags(PCC), f.pc(f.pc'high), f.flags(PCC));
-				a    <= f.pc(f.pc'high) after delay; -- !
+				f.pc <= "0" & c.pc(c.pc'high downto 1) after delay;
+				add1 <=      c.pc(0) after delay;
+				add2 <=   c.dline(0) after delay;
+				acin <= c.flags(PCC) after delay;
+				f.pc(f.pc'high) <= ares  after delay;
+				a               <= ares  after delay;
+				f.flags(PCC)    <= acout after delay;
 				ae   <= '1' after delay;
 			end if;
-
 		when HALT => stop <= '1' after delay;
 		when others => f.choice <= RESET;
 		end case;
 	end process;
 end architecture;
+

@@ -23,11 +23,14 @@ a lot slower.
   - Merge left/right shift into a single instruction?
   - Fully populate instruction set
 * Implement Memory mapped I/O in VHDL and in simulator
+  - Add a timer
+  - Implement a software only 9600 baud UART driver
+  - Add input for switches
 * Fill up instruction set (which instructions arithmetic instructions are optimal/easy to implement?)
 * Implement in VHDL (along with a bit-parallel alternative - use the parallel
   version to test the equivalence with the bit-serial version)
 * Document system (instruction set tables, and state machine diagrams, cycle timing)
-* Make an assembler
+* Make an assembler (done, need to improve it now)
 * Port a simple, very cut down, Forth
 * Do the program counter addition in parallel with the execution, or fetch
 * Use a LFSR instead of a Program Counter?

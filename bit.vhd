@@ -51,9 +51,10 @@ architecture rtl of bcpu is
 	constant Ng:   integer := 3; -- Accumulator is negative
 	constant HLT:  integer := 4; -- Halt CPU
 	constant R:    integer := 5; -- Reset CPU
-	constant PCC:  integer := 6; -- temp used by PC carry
-	constant DONE: integer := 7; -- done processing operand flag (processing last four bits)
-	constant UT:   integer := 8; -- temporary underflow flag
+	constant ROT:  integer := 6; -- Use rotate instead of shift
+	constant PCC:  integer := 7; -- temp used by PC carry
+	constant DONE: integer := 8; -- done processing operand flag (processing last four bits)
+	constant UT:   integer := 9; -- temporary underflow flag
 
 	type bcpu_registers is record
 		state:  state_t;    -- state machine register
@@ -227,11 +228,17 @@ begin
 				when iLSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
+						if c.flags(ROT) = '1' then
+							f.acc  <= c.acc(c.acc'high - 1 downto 0) & c.acc(0) after delay;
+						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 				when iRSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
+						if c.flags(ROT) = '1' then
+							f.acc  <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 

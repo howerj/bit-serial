@@ -289,6 +289,27 @@ static inline unsigned bits(unsigned b) {
 	return r;
 }
 
+static inline mw_t rotl(const mw_t value, unsigned shift) {
+    if (!(shift &= ((sizeof(value)*8) - 1)))
+      return value;
+    return (value << shift) | (value >> ((sizeof(value)*8) - shift));
+}
+
+static inline mw_t rotr(const mw_t value, unsigned shift) {
+    if (!(shift &= ((sizeof(value)*8) - 1)))
+      return value;
+    return (value >> shift) | (value << ((sizeof(value)*8) - shift));
+}
+
+static inline mw_t shiftl(const int type, const mw_t value, unsigned shift) {
+	return type ? rotl(value, shift) : value << shift;
+}
+
+static inline mw_t shiftr(const int type, const mw_t value, unsigned shift) {
+	return type ? rotr(value, shift) : value >> shift;
+}
+
+
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
 	const mw_t parry = !!(*carry & 1u);
@@ -306,6 +327,7 @@ static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	*under |= b > a;
 	return r;
 }
+
 
 static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t addr) {
 	assert(b);
@@ -337,6 +359,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
+		const int rot    = !!(flg & 6);
 		if (CONFIG_TRACER_ON)
 			trace(b, io, tracer, count, pc, flg, acc, op1, cmd);
 		if (flg & (1u << 4)) /* HALT */
@@ -351,25 +374,25 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 
 		pc++;
 		switch (cmd) {
-		case 0x0: acc |= op1;                break; /* OR      */
-		case 0x1: acc &= (0xF000 | op1);     break; /* AND     */
-		case 0x2: acc ^= op1;                break; /* XOR     */
-		case 0x3: acc = ~acc;                break; /* INVERT  */
+		case 0x0: acc |= op1;                  break; /* OR      */
+		case 0x1: acc &= (0xF000 | op1);       break; /* AND     */
+		case 0x2: acc ^= op1;                  break; /* XOR     */
+		case 0x3: acc = ~acc;                  break; /* INVERT  */
 
-		case 0x4: acc = add(acc, op1, &flg); break; /* ADD     */
-		case 0x5: acc = sub(acc, op1, &flg); break; /* SUB     */
-		case 0x6: acc <<= bits(op1);         break; /* LSHIFT  */
-		case 0x7: acc >>= bits(op1);         break; /* RSHIFT  */
+		case 0x4: acc = add(acc, op1, &flg);   break; /* ADD     */
+		case 0x5: acc = sub(acc, op1, &flg);   break; /* SUB     */
+		case 0x6: acc = shiftl(rot, acc, op1); break; /* LSHIFT  */
+		case 0x7: acc = shiftr(rot, acc, op1); break; /* RSHIFT  */
 
-		case 0x8: acc = bload(b, io, op1);   break; /* LOAD    */
-		case 0x9: bstore(b, io, op1, acc);   break; /* STORE   */
-		case 0xA: acc = op1;                 break; /* LITERAL */
-		case 0xB: acc = flg; flg = op1;      break; /* FLAGS */
+		case 0x8: acc = bload(b, io, op1);     break; /* LOAD    */
+		case 0x9: bstore(b, io, op1, acc);     break; /* STORE   */
+		case 0xA: acc = op1;                   break; /* LITERAL */
+		case 0xB: acc = flg; flg = op1;        break; /* FLAGS   */
 
-		case 0xC: pc = op1;                  break; /* JUMP    */
-		case 0xD: if (!acc) pc = op1;        break; /* JUMPZ   */
-		/*   0xE: Reserved                                     */
-		/*   0xF: Reserved                                     */
+		case 0xC: pc = op1;                    break; /* JUMP    */
+		case 0xD: if (!acc) pc = op1;          break; /* JUMPZ   */
+		/*   0xE: Reserved                                       */
+		/*   0xF: Reserved                                       */
 
 		default: r = -1; goto halt;
 		}

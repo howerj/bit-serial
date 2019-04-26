@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O2
-.PHONY: all run simulation viewer clean
+.PHONY: all run simulation viewer clean documentation
 
 all: bit simulation 
 
@@ -11,6 +11,11 @@ simulation: tb.ghw
 
 viewer: tb.ghw simulation
 	gtkwave -f $< &> /dev/null&
+
+documentation: readme.htm
+
+%.htm: %.md
+	pandoc $< -o $@
 
 %.hex: %.asm bit
 	./bit -a $< $@

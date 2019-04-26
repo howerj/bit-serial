@@ -26,5 +26,5 @@ label start
 	jumpz start ; jump back to start if non-zero
 
 label end
-	flags $10 ; halt
+	flags $80 ; halt
  

@@ -16,6 +16,7 @@ architecture testing of tb is
 	signal ld:     std_ulogic_vector(7 downto 0) := (others => '0');
 	signal stop:   boolean    := false;
 	signal clk:    std_ulogic := '0';
+	signal halt:   std_ulogic := '0';
 	signal rst:    std_ulogic := '1';
 	signal tx, rx: std_ulogic := '0';
 begin
@@ -26,11 +27,12 @@ begin
 			file_name          => "bit.hex",
 			N                  => N)
 		port map (
-			clk => clk, 
---			rst => rst, 
-			ld  => ld,
-			tx  => tx, 
-			rx  => rx);
+			clk  => clk, 
+--			rst  => rst, 
+			halt => halt,
+			ld   => ld,
+			tx   => tx, 
+			rx   => rx);
 
 	clock_process: process
 		variable count: integer := 0;
@@ -39,13 +41,18 @@ begin
 		stop <= false;
 		wait for clock_period;
 		rst  <= '0';
-		while count < clocks loop
+		while count < clocks and halt = '0' loop
 			clk <= '1';
 			wait for clock_period / 2;
 			clk <= '0';
 			wait for clock_period / 2;
 			count := count + 1;
 		end loop;
+		if halt = '1' then
+			report "CPU IN HALT STATE";
+		else
+			report "SIMULATION CYCLES RAN OUT";
+		end if;
 		stop <= true;
 		wait;
 	end process;

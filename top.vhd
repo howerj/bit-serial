@@ -10,18 +10,20 @@ entity top is
 		N:                  positive := 16);
 	port (
 		clk:         in std_ulogic;
+		-- synthesis translate_off
 --		rst:         in std_ulogic;
+		halt:       out std_ulogic;
+		-- synthesis translate_on
 		tx:         out std_ulogic;
 		rx:          in std_ulogic;
 		ld:         out std_ulogic_vector(7 downto 0));
 end entity;
 
 architecture rtl of top is
-	constant W:              positive := N - 4;
+	constant W:              positive   := N - 4;
 	signal rst:              std_ulogic := '0';
 	signal i:                std_ulogic := 'X';
 	signal o, a, oe, ie, ae: std_ulogic := 'X';
-	signal stop:             std_ulogic := 'X';
 begin
 	program: entity work.mem
 		generic map(
@@ -44,7 +46,9 @@ begin
 			N                  => N)
 		port map (
 			clk => clk, rst => rst,
+			-- synthesis translate_off
+			stop => halt,
+			-- synthesis translate_on
 			i => i, 
-			o => o, a => a, oe => oe, ie => ie, ae => ae,
-			stop => stop);
+			o => o, a => a, oe => oe, ie => ie, ae => ae);
 end architecture;

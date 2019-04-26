@@ -10,14 +10,16 @@
 -- * Add flags for instruction modes; such as rotate vs shift
 -- * Try to merge ADVANCE into one of the other states if possible,
 -- or at least do the PC+1 in parallel with EXECUTE.
--- * Try to share resource as much as possible, for example the
--- adder/subtractor, but only if that saves space.
 -- * Add assertions, model/specify behaviour
 --   - Assert only one bit set in dline, and one bit always set
 --   when in certain states and not-first
 --   - Assert state transitions
+--   - Assert zero and negative flag exclusivity
 -- * Sort out subtraction flags; should probably have another flag
 -- for the result and set initial borrow to '1'.
+-- * Set the top bits of the address out to some of the flag register
+-- contents. At the moment the memory mapped I/O will not work as
+-- addresses greater than 4096 cannot be written to.
 
 library ieee, work, std;
 use ieee.std_logic_1164.all;
@@ -33,7 +35,7 @@ entity bcpu is
 		rst:         in std_ulogic;
 		i:           in std_ulogic;
 		o, a:       out std_ulogic;
-   		oe, ie, ae: out std_ulogic;
+   		oe, ie, ae: buffer std_ulogic;
 		stop:       out std_ulogic);
 end;
 
@@ -49,17 +51,18 @@ architecture rtl of bcpu is
 	constant U:    integer := 1; -- Underflow/Borrow; set by subtraction 
 	constant Z:    integer := 2; -- Accumulator is zero
 	constant Ng:   integer := 3; -- Accumulator is negative
-	constant HLT:  integer := 4; -- Halt CPU
-	constant R:    integer := 5; -- Reset CPU
-	constant ROT:  integer := 6; -- Use rotate instead of shift
-	constant PCC:  integer := 7; -- temp used by PC carry
-	constant DONE: integer := 8; -- done processing operand flag (processing last four bits)
+	constant PAR:  integer := 4; -- Parity of accumulator
+	constant ROT:  integer := 5; -- Use rotate instead of shift
+	constant R:    integer := 6; -- Reset CPU
+	constant HLT:  integer := 7; -- Halt CPU
+	constant PCC:  integer := 8; -- temp used by PC carry
 	constant UT:   integer := 9; -- temporary underflow flag
 
 	type bcpu_registers is record
 		state:  state_t;    -- state machine register
 		choice: state_t;    -- computed next state
-		first:  boolean;    -- First flag (TODO: remove, use a flag)
+		first:  boolean;    -- First flag, for setting up an instruction
+		last4:  boolean;    -- Are we processing the last 4 bits of the instruction?
 		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
 		acc:    std_ulogic_vector(N - 1 downto 0); -- accumulator
 		pc:     std_ulogic_vector(N - 1 downto 0); -- program counter
@@ -72,6 +75,7 @@ architecture rtl of bcpu is
 		state  => RESET,
 		choice => RESET,
 		first  => true,
+		last4  => false,
 		dline  => (others => '0'),
 		acc    => (others => 'X'),
 		pc     => (others => 'X'),
@@ -91,6 +95,8 @@ architecture rtl of bcpu is
 	end procedure;
 begin
 	assert N >= 8 severity failure;
+	assert not (ie = '1' and oe = '1') severity failure;
+	assert not (ie = '1' and ae = '1') severity failure;
 	adder (add1, add2, acin, ares, acout);         -- shared adder
 	cmd <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 
@@ -136,7 +142,7 @@ begin
 		end if;
 
 		if c.dline(c.dline'high - 4) = '1' then
-			f.flags(DONE) <= '1' after delay;
+			f.last4 <= true after delay;
 		end if;
 
 		case c.state is
@@ -155,26 +161,30 @@ begin
 			end if;
 		when FETCH   =>
 			if c.first then
-				f.dline(0)  <= '1'   after delay;
-				f.first     <= false after delay;
-				f.flags(Z)  <= '1'   after delay;
-				f.flags(Ng) <= c.acc(c.acc'high) after delay;
-				f.flags(DONE)      <= '0' after delay;
+				f.dline(0)   <= '1'   after delay;
+				f.first      <= false after delay;
+				f.flags(Z)   <= '1'   after delay;
+				f.last4      <= false after delay;
+				f.flags(PAR) <= '0';
 			else
 				ie          <= '1' after delay;
 
 				f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+
 				if c.acc(0) = '1' then -- determine flag status before EXECUTE
 					f.flags(Z) <= '0' after delay;
 				end if;
+				f.flags(PAR) <= c.acc(0) xor c.flags(PAR);
 
-				if c.flags(DONE) = '0' then
+				if not c.last4 then
 					f.op    <= i & c.op(c.op'high downto 1) after delay;
 				else
 					f.cmd   <= i   & c.cmd(c.cmd'high downto 1) after delay;
 					f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				end if;
 			end if;
+			
+			f.flags(Ng)  <= c.acc(c.acc'high) after delay;
 
 			   if c.flags(HLT) = '1' then
 				f.choice <= HALT after delay;
@@ -187,10 +197,10 @@ begin
 			f.choice     <= ADVANCE after delay;
 			if c.first then
 				-- Carry and Borrow flags should be cleared manually.
-				f.dline(0)    <= '1'   after delay;
-				f.first       <= false after delay;
-				f.flags(DONE) <= '0'   after delay;
-				f.flags(UT)   <= '1'   after delay; -- subtract one 
+				f.dline(0)  <= '1'   after delay;
+				f.first     <= false after delay;
+				f.last4     <= false after delay;
+				f.flags(UT) <= '1'   after delay; -- subtract one 
 			else
 				case cmd is -- ALU
 				when iOR =>
@@ -198,7 +208,7 @@ begin
 					f.acc <= (c.op(0) or c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iAND =>
 					f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-					if c.flags(DONE) = '0' then
+					if not c.last4 then
 						f.op  <= "0" & c.op (c.op'high downto 1) after delay;
 						f.acc <= (c.op(0) and c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 					end if;
@@ -245,12 +255,12 @@ begin
 				when iLOAD => -- Could set a flag so we loaded/store via accumulator 
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
-					f.op   <= c.op(0) & c.op(c.op'high downto 1) after delay;
+					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= LOAD after delay;
 				when iSTORE =>
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
-					f.op   <= c.op(0) & c.op(c.op'high downto 1) after delay;
+					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
 				when iLITERAL =>
 					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
@@ -315,7 +325,6 @@ begin
 				ae   <= '1' after delay;
 			end if;
 		when HALT => stop <= '1' after delay;
-		when others => f.choice <= RESET;
 		end case;
 	end process;
 end architecture;

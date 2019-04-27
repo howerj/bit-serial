@@ -12,7 +12,7 @@
 
 #define CONFIG_TRACER_ON (1)
 #define MSIZE            (4096u)
-#define MAX_VARS         (512)
+#define MAX_VARS         (4096u)
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
 typedef struct { FILE *in, *out; mw_t ch, leds; } bcpu_io_t;
@@ -137,7 +137,9 @@ static int assemble(bcpu_t *b, FILE *input) {
 	}
 	// TODO:
 	// - Read from a string not a file
+	// - Allow the inclusion of other files with an 'include' directive
 	// - Add primitive macro system
+	// - Make this smaller/rewrite assembler
 	for (char line[256] = { 0 }; fgets(line, sizeof line, input); memset(line, 0, sizeof line)) {
 		char command[80] = { 0 }, arg1[80] = { 0 }, arg2[80] = { 0 };
 		skip(line);
@@ -309,7 +311,6 @@ static inline mw_t shiftr(const int type, const mw_t value, unsigned shift) {
 	return type ? rotr(value, shift) : value >> shift;
 }
 
-
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
 	const mw_t parry = !!(*carry & 1u);
@@ -328,19 +329,22 @@ static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	return r;
 }
 
-
-static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t addr) {
+static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr) {
 	assert(b);
 	assert(io);
+	addr &= 0x0FFFu;
+	addr |= (!!(flg & (1u << 11))) << 15;
 	if (addr & 0x8000u) { /* io */
 		return 0;
 	}
 	return b->m[addr % MSIZE];
 }
 
-static inline void bstore(bcpu_t *b, bcpu_io_t *io, mw_t addr, mw_t val) {
+static inline void bstore(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr, mw_t val) {
 	assert(b);
 	assert(io);
+	addr &= 0x0FFFu;
+	addr |= (!!(flg & (1u << 11))) << 15;
 	if (addr & 0x8000u) { /* io */
 		io->leds = val;
 	} else {
@@ -386,8 +390,8 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		case 0x6: acc = shiftl(rot, acc, bits(op1)); break; /* LSHIFT  */
 		case 0x7: acc = shiftr(rot, acc, bits(op1)); break; /* RSHIFT  */
 
-		case 0x8: acc = bload(b, io, op1);           break; /* LOAD    */
-		case 0x9: bstore(b, io, op1, acc);           break; /* STORE   */
+		case 0x8: acc = bload(b, io, flg, op1);      break; /* LOAD    */
+		case 0x9: bstore(b, io, flg, op1,  acc);     break; /* STORE   */
 		case 0xA: acc = op1;                         break; /* LITERAL */
 		case 0xB: acc = flg; flg = op1;              break; /* FLAGS   */
 

@@ -4,7 +4,7 @@ use ieee.numeric_std.all;
 
 entity top is
 	generic (
-		asynchronous_reset: boolean  := true; -- use asynchronous reset if true, synchronous if false
+		asynchronous_reset: boolean  := false; -- use asynchronous reset if true, synchronous if false
 		delay:              time     := 0 ns; -- simulation only, gate delay
 		file_name:          string   := "bit.hex";
 		N:                  positive := 16);
@@ -16,6 +16,7 @@ entity top is
 		-- synthesis translate_on
 		tx:         out std_ulogic;
 		rx:          in std_ulogic;
+		sw:          in std_ulogic_vector(7 downto 0);
 		ld:         out std_ulogic_vector(7 downto 0));
 end entity;
 
@@ -34,7 +35,7 @@ begin
 			N                  => N)
 		port map (
 			clk => clk, rst => rst,
-			tx => tx, rx => rx, ld => ld,
+			tx => tx, rx => rx, ld => ld, sw => sw,
 			i => o,
 			o => i,
 			a => a, oe => ie, ie => oe, ae => ae);

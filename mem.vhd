@@ -1,3 +1,4 @@
+-- TODO: Separate out the Block RAM and I/O
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -16,6 +17,7 @@ entity mem is
 		rx:          in std_ulogic;
 		tx:         out std_ulogic;
 		ld:         out std_ulogic_vector(7 downto 0);
+		sw:          in std_ulogic_vector(7 downto 0);
 		i, a:        in std_ulogic;
 		o:          out std_ulogic;
    		oe, ie, ae:  in std_ulogic);
@@ -131,7 +133,8 @@ begin
 						o_c <= ram(to_integer(unsigned(a_c(a_c'high - 4 downto 0))));
 					else
 						o_c    <= (others => '0');
-						o_c(0) <= rx;
+						o_c(sw'range) <= sw;
+						o_c(8) <= rx;
 					end if;
 				end if;
 

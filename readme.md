@@ -20,7 +20,7 @@
 
 *Processing data one bit at a time, since 2019*.
 
-## Introduction
+# Introduction
 
 This is a project for a [bit-serial CPU][], which is a CPU that has an architecture
 which processes a single bit at a time instead of in parallel like a normal
@@ -71,14 +71,16 @@ This turns this 'readme.md' file into a HTML file.
 
 Cleans up the project.
 
-## CPU Specification
+# CPU Specification
 
 A quick overview of the features *bcpu*:
 
 * A 16/12-bit CPU
-* Can address 4096 16-bit values of program memory.
+* Can address 4096 16-bit values of program memory, and 8192 16-byte values
+(including the 4096 16-bit values of program memory) of data and
+memory mapped input/output.
 * An accumulator design
-* As it is a [bit serial CPU][] it processes data a bit at a time, the
+* As it is a [bit-serial CPU][] it processes data a bit at a time, the
 processor stays in each state for 16 clock cycles. A single instruction is
 fetched and executed in 51-68 ((16 + 1)\*3 to (16 + 1) \* 4) clock cycles.
 * Has add-with-carry, subtract with borrow flag, rotate and shift left/right 
@@ -97,32 +99,17 @@ of the document and the toolchain assume the width has been set to 16.
 There is a single state-machine which forms the heart of the CPU, it has seven
 states; 'reset', 'fetch', 'execute', 'store', 'load', 'advance' and 'halt'.
 
-![BCPU State-Machine](bcpu-0.png)
+![](bcpu-0.svg)
 
 Not shown in this diagram is the fact that all states can go back to the
-'reset' state when an external reset signal is given.
+'reset' state when an external reset signal is given, this reset can be
+configured to be asynchronous or synchronous.
 
 Whilst the CPU could be described as a 16-bit CPU, a more accurate description
 would be that it is a hybrid 16/12-bit CPU. All instructions are composed of a
 4-bit command and a 12-bit operand (even if the operand is not used).
 
-### Instruction Set
-
-The flags register contains the following flags:
-
-| Flag-Bit | Name        | Description                   |
-| -------- | ----------- | ----------------------------- |
-|    0     | carry       | Carry Flag                    |
-|    1     | borrow      | Borrow/Under Flow             |
-|    2     | zero        | Is accumulator zero?          |
-|    3     | negative    | Is accumulator negative?      |
-|    4     | Parity      | Parity of accumulator         |
-|    5     | Rotate      | Rotate mode = 1, Shift = 0    |
-|    6     | Reset       | Set to reset the CPU          |
-|    7     | Halt        | Set to halt the CPU           |
-|    8     | PCC         | Internal usage                |
-|    9     | UT          | Internal usage                |
-|  10-15   | Unused      | Unused bits                   |
+# Instruction Set
 
 Register Key:
 
@@ -140,37 +127,68 @@ is executed unless the instruction sets the program counter.
 value
 * memory - the program and data memory, read/write.
 
-The instruction set is as follows:
+The instruction set is as follows, opcode is the top four bits of every
+instruction, the rest is used as a 12-bit immediate value which could be used
+as a value or an address.
 
-| Instruction | Registers / Flags Effected    | Description                       |
-| ----------- | ----------------------------- | --------------------------------- |
-|   OR        | acc <- acc OR op              | OR  with 12-bit immediate value   |
-|   AND       | acc <- acc AND (op OR $F000)  | AND with 12-bit immediate value   |
-|   XOR       | acc <- acc XOR op             | XOR with 12-bit immediate value   |
-|   INVERT    | acc <- INVERT acc             | Bit-wise invert                   |
-|   ADD       | acc <- acc + op + carry       | Add with 12-bit immediate value,  |
-|             | carry <- set/clr              | Carry added in and set.           |
-|   SUB       | acc <- (acc - op) - borrow    | Subtract with 12-bit immediate    |
-|             | borrow <- set/clr             | value, borrow used and set/clr    |
-|   LSHIFT    | if rotate flag set:           | Left rotate *OR* Left Shift by    |
-|             | acc <- rotl(acc, bitcount(op) | bit-count of 12-bit operand.      |
-|             | else                          | Rotate/Shift selected by CPU flag |
-|             | acc <- acc << bitcount(op)    |                                   |
-|   RSHIFT    | if rotate flag set:           | Right rotate *OR* Right Shift by  |
-|             | acc <- rotr(acc, bitcount(op) | bit-count of 12-bit operand.      |
-|             | else                          | Rotate/Shift selected by CPU flag |
-|             | acc <- acc >> bitcount(op)    |                                   |
-|   LOAD      | acc <- memory(op)             | Load memory location              |
-|   STORE     | memory(op) <- acc             | Store to memory location          |
-|   FLAGS     | acc <- flags, flags <- acc    | Exchange flags with accumulator   |
-|   JUMP      | pc <- op                      | Unconditional Jump to 12-bit      |
-|             |                               | Address                           |
-|   JUMPZ     | if zero flag not set then:    | Conditional Jump, set Program     |
-|             | pc <- op                      | Counter to 12-bit address only if |
-|             |                               | accumulator is non-zero           |
-|   Unused    |                               |                                   |
-|   Unused    |                               |                                   |
-|             |                               |                                   |
+| Instruction | Registers / Flags Effected               | Description                       |
+| ----------- | ---------------------------------------- | --------------------------------- |
+|   or        | acc = acc OR op                          | OR  with 12-bit immediate value   |
+|   and       | acc = acc AND (op OR $F000)              | AND with 12-bit immediate value   |
+|   xor       | acc = acc XOR op                         | XOR with 12-bit immediate value   |
+|   invert    | acc = INVERT acc                         | Bit-wise invert                   |
+|   add       | acc = acc + op + carry                   | Add with 12-bit immediate value,  |
+|             | carry = set/clr                          | Carry added in and set.           |
+|   sub       | acc = (acc - op) - borrow                | Subtract with 12-bit immediate    |
+|             | borrow = set/clr                         | value, borrow used and set/clr    |
+|   lshift    | if rotate flag set:                      | Left rotate *OR* Left Shift by    |
+|             | acc = rotl(acc, bitcount(op)             | bit-count of 12-bit operand.      |
+|             | else                                     | Rotate/Shift selected by CPU flag |
+|             | acc = acc &lt;&lt; bitcount(op)          |                                   |
+|   rshift    | if rotate flag set:                      | Right rotate *OR* Right Shift by  |
+|             | acc = rotr(acc, bitcount(op)             | bit-count of 12-bit operand.      |
+|             | else                                     | Rotate/Shift selected by CPU flag |
+|             | acc = acc &gt;&gt; bitcount(op)          |                                   |
+|   load      | acc = memory(op OR (addr15 &lt;&lt; 15)) | Load memory location              |
+|   store     | memory(op OR (addr15 &lt;&lt; 15)) = acc | Store to memory location          |
+|   literal   | acc = op                                 | Load literal                      |
+|   flags     | acc = flags, flags = op                  | Exchange flags with accumulator   |
+|   jump      | pc = op                                  | Unconditional Jump to 12-bit      |
+|             |                                          | Address                           |
+|   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |
+|             | pc = op                                  | Counter to 12-bit address only if |
+|             |                                          | accumulator is non-zero           |
+|   Unused    |                                          |                                   |
+|   Unused    |                                          |                                   |
+
+The flags register contains the following flags:
+
+| Flag-Bit | Name        | Description                   |
+| -------- | ----------- | ----------------------------- |
+|    0     | carry       | Carry Flag                    |
+|    1     | borrow      | Borrow/Under Flow             |
+|    2     | zero        | Is accumulator zero?          |
+|    3     | negative    | Is accumulator negative?      |
+|    4     | Parity      | Parity of accumulator         |
+|    5     | Rotate      | Rotate mode = 1, Shift = 0    |
+|    6     | Reset       | Set to reset the CPU          |
+|    7     | Halt        | Set to halt the CPU           |
+|    8     | Reserved    |                               |
+|    9     | Reserved    |                               |
+|    10    | Reserved    |                               |
+|    11    | addr15      | Top bit of LOAD and STORE     |
+|  12-15   | Reserved    |                               |
+
+The zero, parity and negative flags are updated before each instruction is
+executed and depend only on the contents on the accumulator. They are updated
+regardless of what instruction is executed. The carry flag is only updated by
+addition, or the flags instruction, and the borrow flag only by subtraction or
+the flag instruction. The flags instruction can set the zero, parity or
+negative flag bits, however they will be updated right after the flags
+instruction has been executed.
+
+The Halt flag takes precedence over the Reset flag. The reset instruction
+clears all of the flags, then recalculates the parity, zero and negative flags.
 
 To connect the CPU up to the rest of the system you will need to understand the
 signal timing for all of the *bcpu* input and output signals:
@@ -197,7 +215,7 @@ register depending on whether 'oe' or 'ae' is selected.
 16-clock cycles. Prior to this, and after it, the line are guaranteed to return
 to zero for at least one clock cycle. 
 
-## Tool-Chain
+# Tool-Chain
 
 The tool-chain is entirely contained within a single file, [bit.c][]. This
 contains a simulator/debugger and an assembler for the CPU. It is capable of
@@ -205,11 +223,82 @@ producing files understandable by the [VHDL][] CPU as well, the generated file
 is used for the [C][] simulation and the [VHDL][] simulation/synthesis.
 
 The syntax of the assembler and the directives it provides are quite primitive.
-The program itself is quite small (< 1000 LOC), so you can read it to
+The program itself is quite small (about 500 LOC), so you can read it to
 understand it and extend it yourself if you need to.
 
+The directives and commands can be split up into three groups, based on the
+number of arguments they comprise; one, two or three. Only one command may be
+placed on a single line. Comments begin with '#' or a ';' and continue until
+the end of a line. A line is limited to 256 characters in length. All numbers
+are entered in hexadecimal, numbers can instead be replaced by references
+either a label or a variable. Forward references are allowed.
 
-## To-Do
+Directives:
+
+| Directive              | Description                               |
+| ---------------------- | ----------------------------------------- |
+| i                      | Write address as a literal into memory at |
+|                        | current location.                         |
+| $                      | Write number as a literal into memory at  |
+|                        | current location.                         |
+| variable i             | Allocate space for a variable and give    |
+|                        | it a name                                 |
+| allocate $             | Allocate space                            |
+| set $i $i              | Set label or location to value            |
+| label i                | Create label at current location          |
+| instruction            | Compile instruction                       |
+| instruction $i         | Compile instruction with operand          |
+| #                      | Comment until end of line                 |
+| ;                      | Comment until end of line                 |
+
+The arguments given to the directives in the above table can either be
+hexadecimal numbers (such as '$123' or $a12'). This is shown with a '$' sign.
+Or they can be a label or a variable, which is shown with a 'i' sign.
+
+There are a few pseudo instructions:
+
+* 'nop', which is 'or $0'
+* 'clr', which is 'literal $0'
+
+The instruction field may be one of the following; "or", "and", "xor", "invert",
+"add", "sub", "lshift", "rshift", "load", "store", "literal", "flags", "jump", 
+"jumpz", "14?", "15?". "14?" and "15?" correspond to the unused instructions.
+
+To assemble a file with the toolchain:
+
+	./bit -a bit.asm bit.hex
+
+To run the simulator on a built hex file:
+
+	./bit -r bit.hex
+
+An example program:
+
+	; set I/O register $0 to $55, then increment a variable
+	; 'count' that starts at '$3' until it exceeds '$F'. Then
+	; Halt the CPU.
+
+		variable count
+	set count $3
+		flags $0800 ; set address bit
+		literal $55 ; load value to store
+		store $0    ; store in I/O register
+		flags $0    ; reset address bit
+	label start
+		flags $2    ; borrow flag needs to be set to perform subtraction correctly.
+		load  count ; load the counter variable
+		add   $1    ; add 1 to count
+		and   $F    ; % 15
+		store count ; save result
+		flags $0    ; get flags
+		and   $4    ; mask off carry flag
+		jumpz start ; jump back to start if non-zero
+
+	label end
+		flags $80 ; halt
+	 
+
+# To-Do
 
 * Implement Memory mapped I/O in VHDL and in simulator
   - Add an I/O line, or allow the top four bits of the address to be set to
@@ -217,6 +306,12 @@ understand it and extend it yourself if you need to.
   - Add a timer
   - Implement a software only 9600 baud UART driver
   - Add input for switches
+  - Add a bit-serial multiplier to the project, this could be made to
+  be configurable so that it uses different types of multiplication
+  depending on a generic parameter. The interface would need to be the
+  same under all circumstances, so the package to select different
+  multiplication types could have modules that provide those different
+  interfaces.
 * Fill up instruction set (which instructions arithmetic instructions are optimal/easy to implement?)
 * Implement in VHDL (along with a bit-parallel alternative - use the parallel
   version to test the equivalence with the bit-serial version)
@@ -224,11 +319,14 @@ understand it and extend it yourself if you need to.
 * Make an assembler (done, need to improve it now)
 * Port a simple, very cut down, Forth
 * Do the program counter addition in parallel with the execution, or fetch
+* Make an N-Bit version of the tool-chain, the VHDL CPU can be of an arbitrary
+  width (so long as N is greater or equal to 8), but without the tool-chain to
+  support that, it is kind of useless.
 * Use a LFSR instead of a Program Counter? (see
   <https://news.ycombinator.com/item?id=11978900>)
 * Add an interrupt request line
 
-## References / Appendix
+# References / Appendix
 
 The state-machine diagram was made using [Graphviz][], and can be viewed and
 edited immediately by copying the following text into [GraphvizOnline][].
@@ -363,4 +461,38 @@ That's all folks!
 [bit.asm]: bit.asm
 [Digilent]: https://store.digilentinc.com/
 
-<style type="text/css">body{margin:40px auto;max-width:850px;line-height:1.6;font-size:16px;color:#444;padding:0 10px}h1,h2,h3{line-height:1.2}table {width: 100%; border-collapse: collapse;}table, th, td{border: 1px solid black;}code { color: #091992; } </style>
+<style type="text/css">
+	body{
+		max-width: 50rem;
+		padding: 2rem;
+		margin: auto;
+		line-height: 1.6;
+		font-size: 1rem;
+		color: #444;
+	}
+	h1,h2,h3 {
+		line-height:1.2;
+	}
+	table {
+		width: 100%; 
+		border-collapse: collapse;
+	}
+	table, th, td{
+		border: 0.1rem solid black;
+	}
+	img {
+		display: block;
+		margin: 0 auto;
+    		margin-left: auto;
+    		margin-right: auto;
+	}
+	code { 
+		color: #091992; 
+		display: block;
+		margin: 0 auto;
+    		margin-left: auto;
+    		margin-right: auto;
+
+	} 
+</style>
+

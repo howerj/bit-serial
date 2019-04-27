@@ -14,15 +14,15 @@ TIMESPEC TS_sys_clk_pin = PERIOD sys_clk_pin 100000 kHz;
 # Net "btnl"  LOC = C4  | IOSTANDARD = LVCMOS33;               button left
 # Net "btnr"  LOC = D9  | IOSTANDARD = LVCMOS33;               button right
 # 
-# # Input: Switches
-# Net "sw<0>" LOC = T10 | IOSTANDARD = LVCMOS33;               # switch 0
-# Net "sw<1>" LOC = T9  | IOSTANDARD = LVCMOS33;               # switch 1
-# Net "sw<2>" LOC = V9  | IOSTANDARD = LVCMOS33;               # switch 2
-# Net "sw<3>" LOC = M8  | IOSTANDARD = LVCMOS33;               # switch 3
-# Net "sw<4>" LOC = N8  | IOSTANDARD = LVCMOS33;               # switch 4
-# Net "sw<5>" LOC = U8  | IOSTANDARD = LVCMOS33;               # switch 5
-# Net "sw<6>" LOC = V8  | IOSTANDARD = LVCMOS33;               # switch 6
-# Net "sw<7>" LOC = T5  | IOSTANDARD = LVCMOS33;               # switch 7
+# Input: Switches
+Net "sw<0>" LOC = T10 | IOSTANDARD = LVCMOS33;               # switch 0
+Net "sw<1>" LOC = T9  | IOSTANDARD = LVCMOS33;               # switch 1
+Net "sw<2>" LOC = V9  | IOSTANDARD = LVCMOS33;               # switch 2
+Net "sw<3>" LOC = M8  | IOSTANDARD = LVCMOS33;               # switch 3
+Net "sw<4>" LOC = N8  | IOSTANDARD = LVCMOS33;               # switch 4
+Net "sw<5>" LOC = U8  | IOSTANDARD = LVCMOS33;               # switch 5
+Net "sw<6>" LOC = V8  | IOSTANDARD = LVCMOS33;               # switch 6
+Net "sw<7>" LOC = T5  | IOSTANDARD = LVCMOS33;               # switch 7
 # 
 # # Output: Individual LEDs
 Net "ld<0>" LOC = U16 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # led 0

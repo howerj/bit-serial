@@ -1,13 +1,13 @@
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.util.all;
 
 entity top is
 	generic (
-		asynchronous_reset: boolean  := false; -- use asynchronous reset if true, synchronous if false
-		delay:              time     := 0 ns; -- simulation only, gate delay
-		file_name:          string   := "bit.hex";
-		N:                  positive := 16);
+		g: common_generics  := default_settings;
+		file_name: string   := "bit.hex";
+		N:         positive := 16);
 	port (
 		clk:         in std_ulogic;
 		-- synthesis translate_off
@@ -28,11 +28,10 @@ architecture rtl of top is
 begin
 	program: entity work.mem
 		generic map(
-			asynchronous_reset => asynchronous_reset,
-			delay              => delay,
-			file_name          => file_name,
-			W                  => W,
-			N                  => N)
+			g         => g,
+			file_name => file_name,
+			W         => W,
+			N         => N)
 		port map (
 			clk => clk, rst => rst,
 			tx => tx, rx => rx, ld => ld, sw => sw,
@@ -42,8 +41,8 @@ begin
 
 	cpu: entity work.bcpu 
 		generic map (
-			asynchronous_reset => asynchronous_reset,
-			delay              => delay,
+			asynchronous_reset => g.asynchronous_reset,
+			delay              => g.delay,
 			N                  => N)
 		port map (
 			clk => clk, rst => rst,

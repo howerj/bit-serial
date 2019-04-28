@@ -175,7 +175,7 @@ begin
 				f.first     <= false after delay;
 			else
 				ae      <= '1' after delay;
-				oe      <= '1' after delay;
+				-- oe   <= '1' after delay;
 				f.acc   <= "0" & c.acc(c.acc'high downto 1) after delay;
 				f.pc    <= "0" & c.pc (c.pc'high  downto 1) after delay;
 				f.op    <= "0" & c.op (c.op'high  downto 1) after delay;

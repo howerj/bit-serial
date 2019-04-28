@@ -26,9 +26,11 @@ bit: bit.c
 %.o: %.vhd
 	ghdl -a -g $<
 
-mem.o: mem.vhd
+mem.o: mem.vhd util.o
 
-top.o: top.vhd mem.o bit.o 
+uart.o: uart.vhd util.o
+
+top.o: top.vhd mem.o bit.o util.o uart.o
 
 tb.o: tb.vhd bit.o mem.o top.o
 
@@ -41,6 +43,8 @@ tb.ghw: tb bit.hex
 SOURCES = \
 	top.vhd \
 	bit.vhd \
+	uart.vhd \
+	util.vhd \
 	mem.vhd
 
 OBJECTS = ${SOURCES:.vhd=.o}

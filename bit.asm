@@ -12,10 +12,10 @@
 ; a variable until it is larger than $10, then halt
 variable count
 set count $3
-	flags $0800 ; set address bit
-	literal $55 ; load value to store
-	store $0    ; store in I/O register
-	flags $0    ; reset address bit
+;	flags $0800 ; set address bit
+;	literal $55 ; load value to store
+;	store $0    ; store in I/O register
+;	flags $0    ; reset address bit
 label start
 	flags $2    ; borrow flag needs to be set to perform subtraction correctly.
 	load  count ; 

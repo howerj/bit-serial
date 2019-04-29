@@ -12,12 +12,10 @@
 -- the stack.
 -- * Allow the CPU to be customized via generics, such as:
 --   * Type of instructions
---   * Parity (even or odd) of parity calculation
 -- * Try to merge ADVANCE into one of the other states if possible,
 -- or at least do the PC+1 in parallel with EXECUTE.
 -- * Allow more data/IO to be addressed by using more flag bits
 -- * Add assertions, model/specify behaviour
---   - Assert state transitions
 --   - Assert output lines are correct for the appropriate states
 --   and instructions.
 -- * The 'iFLAGS' instruction could be improved; the operand
@@ -28,12 +26,18 @@
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all; -- for debug only, not needed for synthesis
 
 entity bcpu is 
 	generic (
 		asynchronous_reset: boolean  := true; -- use asynchronous reset if true, synchronous if false
 		delay:              time     := 0 ns; -- simulation only, gate delay
-		N:                  positive := 16);
+		N:                  positive := 16;
+	
+		parity:             std_ulogic := '0';   -- set parity (even/odd) of parity flag
+		-- debug must be false for synthesis
+		debug:              boolean    := false  -- if true, debug statements will be printed
+	);
 	port (
 		clk:         in std_ulogic;
 		rst:         in std_ulogic;
@@ -112,10 +116,30 @@ architecture rtl of bcpu is
 		end loop;
 		return count;
 	end function;
+
+	procedure reportln is 
+		function stringify(slv: in std_ulogic_vector) return string is
+		begin
+			return integer'image(to_integer(unsigned(slv)));
+		end function;
+
+		variable ll: line;
+	begin
+		-- synthesis translate_off
+		if debug then -- debug only, not synthesizable if 'debug' is true.
+			write(ll, stringify(c.pc) & ": ");
+			write(ll, cmd_t'image(cmd) & " ");
+			write(ll, stringify(c.op) & " ");
+			write(ll, stringify(c.acc) & " ");
+			write(ll, stringify(c.flags) & " ");
+			writeline(OUTPUT, ll);
+		end if;
+		-- synthesis translate_on
+	end procedure;
 begin
-	assert N >= 8 severity failure;
-	assert not (ie = '1' and oe = '1') severity failure;
-	assert not (ie = '1' and ae = '1') severity failure;
+	assert N >= 8                      report "CPU Width too small: N >= 8"   severity failure;
+	assert not (ie = '1' and oe = '1') report "input/output at the same time" severity failure;
+	assert not (ie = '1' and ae = '1') report "input whilst changing address" severity failure;
 	adder (add1, add2, acin, ares, acout);           -- shared adder
 	cmd   <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 	last4 <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
@@ -124,15 +148,25 @@ begin
 	process (clk, rst)
 	begin
 		if rst = '1' and asynchronous_reset then
-			c.dline <= (others => '0');
-			c.state <= RESET;
+			c.dline <= (others => '0') after delay;
+			c.state <= RESET after delay;
 		elsif rising_edge(clk) then
 			c <= f after delay;
 			if rst = '1' and not asynchronous_reset then
-				c.dline <= (others => '0');
-				c.state <= RESET;
+				c.dline <= (others => '0') after delay;
+				c.state <= RESET after delay;
+			else
+				if c.state = EXECUTE and c.first then reportln; end if;
+				if c.state = RESET   and last = '1' then assert f.state = FETCH;   end if;
+				if c.state = LOAD    and last = '1' then assert f.state = ADVANCE; end if;
+				if c.state = STORE   and last = '1' then assert f.state = ADVANCE; end if;
+				if c.state = ADVANCE and last = '1' then assert f.state = FETCH;   end if;
+				if c.state = HALT then assert f.state = HALT; end if;
+				if c.state = EXECUTE and last = '1' then
+					assert f.state = ADVANCE or f.state = LOAD or f.state = STORE or f.state = FETCH;
+				end if;
 			end if;
-			assert not (c.first xor f.dline(0) = '1');
+			assert not (c.first xor f.dline(0) = '1') report "first/dline";
 		end if;
 	end process;
 
@@ -152,9 +186,9 @@ begin
 		f.tunder <= '1' after delay;
 
 		if c.first then
-			assert bit_count(c.dline) = 0;
+			assert bit_count(c.dline) = 0 report "too many dline bits";
 		else
-			assert bit_count(c.dline) = 1;
+			assert bit_count(c.dline) = 1 report "missing dline bit";
 		end if;
 
 		if last = '1' then
@@ -175,26 +209,26 @@ begin
 				f.first     <= false after delay;
 			else
 				ae      <= '1' after delay;
-				oe      <= '1' after delay;
+				-- oe   <= '1' after delay;
 				f.acc   <= "0" & c.acc(c.acc'high downto 1) after delay;
 				f.pc    <= "0" & c.pc (c.pc'high  downto 1) after delay;
 				f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				f.flags <= "0" & c.flags(c.flags'high downto 1) after delay;
 			end if;
 		when FETCH   =>
-			assert not (c.flags(Z) = '1' and c.flags(Ng) = '1');
+			assert not (c.flags(Z) = '1' and c.flags(Ng) = '1') report "zero and negative?";
 			if c.first then
-				f.dline(0)   <= '1'   after delay;
-				f.first      <= false after delay;
-				f.flags(Z)   <= '1'   after delay;
-				f.flags(PAR) <= '0'   after delay;
+				f.dline(0)   <= '1'    after delay;
+				f.first      <= false  after delay;
+				f.flags(Z)   <= '1'    after delay;
+				f.flags(PAR) <= parity after delay;
 			else
 				ie          <= '1' after delay;
 
 				if c.acc(0) = '1' then -- determine flag status before EXECUTE
 					f.flags(Z) <= '0' after delay;
 				end if;
-				f.flags(PAR) <= c.acc(0) xor c.flags(PAR);
+				f.flags(PAR) <= c.acc(0) xor c.flags(PAR) after delay;
 				f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 
 				if not c.last4 then
@@ -275,7 +309,7 @@ begin
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
 					if last = '1' then
-						a <= c.flags(ADDR15);
+						a <= c.flags(ADDR15) after delay;
 					end if;
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= LOAD after delay;
@@ -283,7 +317,7 @@ begin
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
 					if last = '1' then
-						a <= c.flags(ADDR15);
+						a <= c.flags(ADDR15) after delay;
 					end if;
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;

@@ -300,6 +300,8 @@ An example program:
 
 # To-Do
 
+This is more of a nice-to-have list, and a list of ideas.
+
 * Implement Memory mapped I/O in VHDL and in simulator
   - Add an I/O line, or allow the top four bits of the address to be set to
   a default value (use more flag bits?).
@@ -325,6 +327,19 @@ An example program:
 * Use a LFSR instead of a Program Counter? (see
   <https://news.ycombinator.com/item?id=11978900>)
 * Add an interrupt request line
+* A good project to use this CPU for would be to reimplement the VT100 terminal
+  emulator used in <https://github.com/howerj/forth-cpu>. I could perhaps
+  reimplement the core, which came from <http://www.javiervalcarce.eu/html/vhdl-vga80x40-en.html>.
+  Less hardware could be used, whilst the functionality could be increased. The
+  CPU takes up very little room and two of the FPGA dual-port block RAM devices 
+  are already required by the VGA module - one for font (of which only a
+  fraction of the memory and a single port is used) and the memory required
+  for the text buffer. 
+* Implement a bit-banged UART as a program. Doing this (and perhaps integrating
+  this with the VGA core) would mean even fewer resources would be needed.
+* Add a timer peripheral into the CPU core itself so it is always available. It
+  should be capable of generating interrupts for the CPU. This could be used
+  so the CPU always has a baud rate counter.
 
 # References / Appendix
 

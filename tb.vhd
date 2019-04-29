@@ -1,17 +1,25 @@
+-- File:        tb.vhd
+-- Author:      Richard James Howe
+-- Repository:  https://github.com/howerj/bit-serial
+-- License:     MIT
+-- Description: Test bench for top level entity, this
+-- test bench just exercises the bit-serial CPU with a
+-- test program.
+
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.util.all;
 
 entity tb is
 end tb;
 
 architecture testing of tb is
-	constant clock_frequency:    positive := 100_000_000;
-	constant clock_period:       time     := 1000 ms / clock_frequency;
+	constant g: common_generics           := default_settings;
+	constant clock_period:       time     := 1000 ms / g.clock_frequency;
 	constant clocks:             integer  := 20000;
 	constant N:                  positive := 16;
-	constant delay:              time     := 0 ns;
-	constant asynchronous_reset: boolean  := false;
+	constant debug:              boolean  := true;
 
 	signal ld: std_ulogic_vector(7 downto 0) := (others => '0');
 	signal sw: std_ulogic_vector(7 downto 0) := x"AA";
@@ -23,10 +31,10 @@ architecture testing of tb is
 begin
 	uut: entity work.top
 		generic map(
-			asynchronous_reset => asynchronous_reset,
-			delay              => delay,
-			file_name          => "bit.hex",
-			N                  => N)
+			g          => g,
+			file_name  => "bit.hex",
+			N          => N,
+			debug      => debug)
 		port map (
 			clk  => clk, 
 --			rst  => rst, 

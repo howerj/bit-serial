@@ -26,13 +26,15 @@ bit: bit.c
 %.o: %.vhd
 	ghdl -a -g $<
 
-mem.o: mem.vhd
+peripherals.o: peripherals.vhd util.o
 
-top.o: top.vhd mem.o bit.o 
+uart.o: uart.vhd util.o
 
-tb.o: tb.vhd bit.o mem.o top.o
+top.o: top.vhd peripherals.o bit.o util.o uart.o
 
-tb: tb.o bit.o mem.o top.o
+tb.o: tb.vhd bit.o peripherals.o top.o
+
+tb: tb.o bit.o peripherals.o top.o
 	ghdl -e $@
 
 tb.ghw: tb bit.hex
@@ -41,7 +43,9 @@ tb.ghw: tb bit.hex
 SOURCES = \
 	top.vhd \
 	bit.vhd \
-	mem.vhd
+	uart.vhd \
+	util.vhd \
+	peripherals.vhd
 
 OBJECTS = ${SOURCES:.vhd=.o}
 

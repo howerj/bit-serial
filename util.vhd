@@ -1,3 +1,10 @@
+-- File:        bit.vhd
+-- Author:      Richard James Howe
+-- Repository:  https://github.com/howerj/bit-serial
+-- License:     MIT
+-- Description: Utility module, mostly taken from another project
+-- of mine, <https://github.com/howerj/forth-cpu>.
+
 library ieee, work;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;

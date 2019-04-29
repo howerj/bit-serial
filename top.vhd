@@ -1,3 +1,9 @@
+-- File:        top.vhd
+-- Author:      Richard James Howe
+-- Repository:  https://github.com/howerj/bit-serial
+-- License:     MIT
+-- Description: Top level entity; Bit Serial CPU
+
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -7,7 +13,9 @@ entity top is
 	generic (
 		g: common_generics  := default_settings;
 		file_name: string   := "bit.hex";
-		N:         positive := 16);
+		N:         positive := 16;
+		debug:     boolean  := false -- will not synthesize if true
+	);
 	port (
 		clk:         in std_ulogic;
 		-- synthesis translate_off
@@ -26,7 +34,7 @@ architecture rtl of top is
 	signal i:                std_ulogic := 'X';
 	signal o, a, oe, ie, ae: std_ulogic := 'X';
 begin
-	program: entity work.mem
+	peripheral: entity work.peripherals
 		generic map(
 			g         => g,
 			file_name => file_name,
@@ -43,7 +51,8 @@ begin
 		generic map (
 			asynchronous_reset => g.asynchronous_reset,
 			delay              => g.delay,
-			N                  => N)
+			N                  => N,
+			debug              => debug)
 		port map (
 			clk => clk, rst => rst,
 			-- synthesis translate_off

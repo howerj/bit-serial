@@ -26,9 +26,9 @@ bit: bit.c
 %.o: %.vhd
 	ghdl -a -g $<
 
-peripherals.o: peripherals.vhd util.o
-
 uart.o: uart.vhd util.o
+
+peripherals.o: peripherals.vhd uart.o util.o
 
 top.o: top.vhd peripherals.o bit.o util.o uart.o
 

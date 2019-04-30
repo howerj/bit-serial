@@ -14,7 +14,7 @@
 #define MSIZE            (4096u)
 #define MAX_VARS         (4096u)
 typedef uint16_t mw_t; /* machine word */
-typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
+typedef struct { mw_t pc, acc, flg, shadow, count, compare, m[MSIZE]; } bcpu_t;
 typedef struct { FILE *in, *out; mw_t ch, leds, switches; } bcpu_io_t;
 typedef struct { char name[80]; int type; mw_t value; } var_t;
 enum { TYPE_VAR, TYPE_LABEL };
@@ -23,7 +23,7 @@ static const char *commands[] = {
 	"or",   "and",   "xor",     "invert",
 	"add",  "sub",   "lshift",  "rshift",
 	"load", "store", "literal", "flags",
-	"jump", "jumpz", "14?",    "15?",
+	"jump", "jumpz", "shadow",  "15?",
 };
 
 static int instruction(const char *c) {
@@ -324,6 +324,14 @@ static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	return r;
 }
 
+static inline void swap(mw_t *a, mw_t *b) {
+	assert(a);
+	assert(b);
+	const mw_t c = *a;
+	*a = *b;
+	*b = c;
+}
+
 static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr) {
 	assert(b);
 	assert(io);
@@ -366,27 +374,38 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 	assert(b);
 	assert(io);
 	int r = 0;
-	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
+	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg, shadow = b->shadow, compare = b->compare, count = b->count;
 	const unsigned forever = cycles == 0;
-       	unsigned count = 0;
-	for (; count < cycles || forever; count++) {
+       	unsigned steps = 0;
+	for (; steps < cycles || forever; steps++) {
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
-		const int rot    = !!(flg & (1u << 5));
+		const int alt = !!(flg & (1u << 5));
 		if (CONFIG_TRACER_ON)
-			trace(b, io, tracer, count, pc, flg, acc, op1, cmd);
+			trace(b, io, tracer, steps, pc, flg, acc, op1, cmd);
 		if (flg & (1u << 7)) /* HALT */
 			goto halt;
 		if (flg & (1u << 6)) { /* RESET */
 			pc = 0;
 			acc = 0;
 			flg = 0;
+			count = 0;
+			compare = 0;
 		}
 		flg &= 0xFFE3;      /* clear flags we are about to set */
 		flg |= ((!acc) << 2);             /* set zero flag     */
 		flg |= ((!!(acc & 0x8000)) << 3); /* set negative flag */
 		flg |= (!(bits(acc) & 1u)) << 4;  /* set parity bit    */
+		if (flg & (1u << 9)) { /* Counter Enable */
+			count += 1;
+		}
+		if (flg & (1u << 10)) {
+			if (count == compare) {
+				swap(&pc, &shadow);
+				continue;
+			}
+		}
 
 		pc++;
 		switch (cmd) {
@@ -397,8 +416,8 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 
 		case 0x4: acc = add(acc, op1, &flg);         break; /* ADD     */
 		case 0x5: acc = sub(acc, op1, &flg);         break; /* SUB     */
-		case 0x6: acc = shiftl(rot, acc, bits(op1)); break; /* LSHIFT  */
-		case 0x7: acc = shiftr(rot, acc, bits(op1)); break; /* RSHIFT  */
+		case 0x6: acc = shiftl(alt, acc, bits(op1)); break; /* LSHIFT  */
+		case 0x7: acc = shiftr(alt, acc, bits(op1)); break; /* RSHIFT  */
 
 		case 0x8: acc = bload(b, io, flg, op1);      break; /* LOAD    */
 		case 0x9: bstore(b, io, flg, op1,  acc);     break; /* STORE   */
@@ -407,7 +426,11 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 
 		case 0xC: pc = op1;                          break; /* JUMP    */
 		case 0xD: if (!acc) pc = op1;                break; /* JUMPZ   */
-		/*   0xE: Reserved                                             */
+		case 0xE: /* shadow */
+			if (alt) { swap(&acc, &shadow); }
+			else     { compare = acc; acc = count; }
+			break;
+
 		/*   0xF: Reserved                                             */
 
 		default: r = -1; goto halt;
@@ -418,6 +441,9 @@ halt:
 	b->pc  = pc;
 	b->acc = acc;
 	b->flg = flg;
+	b->shadow = shadow;
+	b->count = count;
+	b->compare = compare;
 	return r;
 }
 
@@ -453,7 +479,7 @@ static FILE *fopen_or_die(const char *file, const char *mode) {
 
 int main(int argc, char **argv) {
 	int compile = 0, run = 0, cycles = 0x1000;
-	static bcpu_t b = { 0, 0, 0, { 0 } };
+	static bcpu_t b = { 0, 0, 0, 0, 0, 0, { 0 } };
 	bcpu_io_t io = { .in = stdin, .out = stdout };
 	FILE *program = stdin, *trace = stderr, *hex = NULL;
 	if (argc < 2)

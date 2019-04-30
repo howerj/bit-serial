@@ -108,7 +108,7 @@ implementation: reports tmp
 	@rmdir xlnx_auto_0_xdb
 	@mv top_ngdbuild.xrpt tmp
 
-	@${TIME} map -intstyle silent -detail -p xc6slx16-csg324-3 -pr b -c 100 -w -o top_map.ncd top.ngd top.pcf
+	@${TIME} map -intstyle silent -detail -p xc6slx16-csg324-3 -convert_bram8 -pr b -c 100 -w -o top_map.ncd top.ngd top.pcf
 	@mv top_map.mrp reports/map.log
 	@mv _xmsgs/* tmp/_xmsgs
 	@rmdir _xmsgs

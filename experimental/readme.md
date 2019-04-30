@@ -118,6 +118,9 @@ such as addition, or loading a value.
 * pc    - The program counter, this is incremented after each instruction
 is executed unless the instruction sets the program counter.
 * flags - A 16-bit register containing 8-flags
+* shadow - swapped with the program counter on an interrupt
+* compare - Counter compare register
+* count  - Counter register
 * op    - A 12-bit operand which is part of every instruction.
 * rotl  - rotate left, not through carry
 * rotr  - rotate right, not through carry
@@ -158,6 +161,11 @@ as a value or an address.
 |   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |
 |             | pc = op                                  | Counter to 12-bit address only if |
 |             |                                          | accumulator is non-zero           |
+|   shadow    | if alternate flag set then:              | Swap internal registers for       |
+|             | comp = acc; acc = count;                 | either the shadow register, or    |
+|             | else                                     | counter/compare registers         |
+|             | shadow = acc; acc = shadow;              |                                   |
+|             |                                          |                                   |
 |   Unused    |                                          |                                   |
 
 The flags register contains the following flags:
@@ -172,7 +180,9 @@ The flags register contains the following flags:
 |    5     | Alternate   | Activate alternate instruction |
 |    6     | Reset       | Set to reset the CPU           |
 |    7     | Halt        | Set to halt the CPU            |
-|   8-10   | Reserved    |                                |
+|    8     | inten       | Interrupt Enable if 1          |
+|    9     | cnten       | Counter Enable                 |
+|    10    | cntint      | Counter Interrupt              |
 |    11    | addr15      | Top bit of LOAD and STORE      |
 |  12-15   | Reserved    |                                |
 
@@ -211,6 +221,13 @@ register depending on whether 'oe' or 'ae' is selected.
 * All of the enable lines ('oe', 'ie', and 'ae') are held high for exactly
 16-clock cycles. Prior to this, and after it, the line are guaranteed to return
 to zero for at least one clock cycle. 
+* Interrupts can be triggered from an external source, or from the internal
+  clock.
+* Interrupts are only processed in the EXECUTE state.
+* An interrupt fires only when interrupts are enabled with the correct flag.
+* An interrupts firing causes interrupts to be disabled.
+* An interrupts swaps the location in the shadow register with the program
+  counter.
 
 # Tool-Chain
 

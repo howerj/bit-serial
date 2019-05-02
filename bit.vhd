@@ -4,6 +4,13 @@
 -- License:     MIT
 -- Description: An N-bit, simple and small bit serial CPU
 --
+-- TODO: Add interrupts, some form of call/return, and
+-- a built in timer with clock enable/interrupt generation
+-- on comparison to a register.
+-- TODO: It might be best to experiment with the instruction
+-- set more, such as treating the operand as an address to load
+-- instead of using it directly (which may require another state).
+-- This could be selected for with a flag.
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -46,7 +53,7 @@ architecture rtl of bcpu is
 	constant HLT:    integer :=  7; -- Halt CPU
 	constant ADDR15: integer := 11; -- Highest bit of LOAD/STORE address
 
-	type bcpu_registers is record
+	type registers_t is record
 		state:  state_t;    -- state machine register
 		choice: state_t;    -- computed next state
 		first:  boolean;    -- First flag, for setting up an instruction
@@ -61,7 +68,7 @@ architecture rtl of bcpu is
 		cmd:    std_ulogic_vector(3 downto 0);     -- instruction
 	end record;
 
-	constant bcpu_default: bcpu_registers := (
+	constant registers_default: registers_t := (
 		state  => RESET,
 		choice => RESET,
 		first  => true,
@@ -73,13 +80,12 @@ architecture rtl of bcpu is
 		pc     => (others => 'X'),
 		op     => (others => 'X'),
 		flags  => (others => 'X'),
-		cmd    => (others => 'X')
-	);
+		cmd    => (others => 'X'));
 
-	signal c, f: bcpu_registers := bcpu_default; -- BCPU registers
-	signal cmd: cmd_t := iOR; -- Shows up nicely in traces as an enumerated value
-	signal add1, add2, acin, ares, acout: std_ulogic := '0'; -- shared adder signals
-	signal last4, last:                   std_ulogic := '0'; -- state sequence signals
+	signal c, f: registers_t := registers_default; -- BCPU registers
+	signal cmd: cmd_t; -- Shows up nicely in traces as an enumerated value
+	signal add1, add2, acin, ares, acout: std_ulogic; -- shared adder signals
+	signal last4, last:                   std_ulogic; -- state sequence signals
 
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
@@ -107,7 +113,7 @@ architecture rtl of bcpu is
 		variable ll: line;
 	begin
 		-- synthesis translate_off
-		if debug then -- debug only, not synthesizable if 'debug' is true.
+		if debug then
 			write(ll, stringify(c.pc) & ": ");
 			write(ll, cmd_t'image(cmd) & " ");
 			write(ll, stringify(c.op) & " ");
@@ -190,7 +196,6 @@ begin
 				f.first     <= false after delay;
 			else
 				ae      <= '1' after delay;
-				-- oe   <= '1' after delay;
 				f.acc   <= "0" & c.acc(c.acc'high downto 1) after delay;
 				f.pc    <= "0" & c.pc (c.pc'high  downto 1) after delay;
 				f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
@@ -307,7 +312,8 @@ begin
 					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
 				when iFLAGS =>
 					f.acc   <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
-					f.flags <=    c.op(0) & c.flags(c.flags'high downto 1) after delay;
+					f.flags <= (((not c.op(0)) and c.acc(0)) or (c.op(0) and c.flags(0))) & 
+						   c.flags(c.flags'high downto 1) after delay;
 					f.op    <=        "0" & c.op(c.op'high downto 1) after delay;
 
 				when iJUMP =>

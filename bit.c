@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdarg.h>
+#include <limits.h>
 
 #define CONFIG_TRACER_ON (1)
 #define MSIZE            (4096u)
@@ -17,7 +18,7 @@ typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
 typedef struct { FILE *in, *out; mw_t ch, leds, switches; } bcpu_io_t;
 typedef struct { char name[80]; int type; mw_t value; } var_t;
-enum { TYPE_VAR, TYPE_LABEL };
+enum { TYPE_VAR, TYPE_LABEL, TYPE_CONST };
 
 static const char *commands[] = { 
 	"or",   "and",   "xor",     "invert",
@@ -241,6 +242,16 @@ static int assemble(bcpu_t *b, FILE *input) {
 				}
 				assert(op1 < MSIZE);
 				b->m[op1] = op2;
+			} else if (!strcmp(command, "constant")) {
+				if (!arg2num) { /* TODO: evaluate simple expressions */
+					error("not a number: %s", arg2);
+					goto fail;
+				}
+				const int added = reference(vs, MAX_VARS, arg1, TYPE_CONST, op2, 0);
+				if (added < 0) {
+					error("constant? %d/%s", added, arg1);
+					goto fail;
+				}
 			} else {
 				error("unknown command: %s", command);
 				goto fail;
@@ -287,15 +298,17 @@ static inline unsigned bits(unsigned b) {
 }
 
 static inline mw_t rotl(const mw_t value, unsigned shift) {
-    if (!(shift &= ((sizeof(value)*8) - 1)))
-      return value;
-    return (value << shift) | (value >> ((sizeof(value)*8) - shift));
+	shift &= (sizeof(value) * CHAR_BIT) - 1u;
+	if (!shift)
+		return value;
+	return (value << shift) | (value >> ((sizeof(value) * CHAR_BIT) - shift));
 }
 
 static inline mw_t rotr(const mw_t value, unsigned shift) {
-    if (!(shift &= ((sizeof(value)*8) - 1)))
-      return value;
-    return (value >> shift) | (value << ((sizeof(value)*8) - shift));
+	shift &= (sizeof(value) * CHAR_BIT) - 1u;
+	if (!shift)
+		return value;
+	return (value >> shift) | (value << ((sizeof(value) * CHAR_BIT) - shift));
 }
 
 static inline mw_t shiftl(const int type, const mw_t value, unsigned shift) {
@@ -348,8 +361,10 @@ static inline void bstore(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr, mw_t va
 		switch (addr & 0x7) {
 		case 0: io->leds = val; break;
 		case 1: 
-			if (val & (1u << 13))
+			if (val & (1u << 13)) {
 				fputc(val & 0xFFu, io->out);
+				fflush(io->out);
+			}
 			if (val & (1u << 10))
 				io->ch = fgetc(io->in);
 			break;
@@ -366,7 +381,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 	assert(b);
 	assert(io);
 	int r = 0;
-	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
+	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg, t = 0;
 	const unsigned forever = cycles == 0;
        	unsigned count = 0;
 	for (; count < cycles || forever; count++) {
@@ -403,7 +418,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		case 0x8: acc = bload(b, io, flg, op1);      break; /* LOAD    */
 		case 0x9: bstore(b, io, flg, op1,  acc);     break; /* STORE   */
 		case 0xA: acc = op1;                         break; /* LITERAL */
-		case 0xB: acc = flg; flg = op1;              break; /* FLAGS   */
+		case 0xB: t = flg; flg= (~op1 & acc) | (op1 & flg); acc = t; break; /* FLAGS   */
 
 		case 0xC: pc = op1;                          break; /* JUMP    */
 		case 0xD: if (!acc) pc = op1;                break; /* JUMPZ   */

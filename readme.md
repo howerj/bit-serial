@@ -152,7 +152,7 @@ as a value or an address.
 |   load      | acc = memory(op OR (addr15 &lt;&lt; 15)) | Load memory location              |
 |   store     | memory(op OR (addr15 &lt;&lt; 15)) = acc | Store to memory location          |
 |   literal   | acc = op                                 | Load literal                      |
-|   flags     | acc = flags, flags = op                  | Exchange flags with accumulator   |
+|   flags     | acc = flags, flags=(~op&acc)|(op&flags)  | Exchange flags with accumulator   |
 |   jump      | pc = op                                  | Unconditional Jump to 12-bit      |
 |             |                                          | Address                           |
 |   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |
@@ -334,6 +334,8 @@ This is more of a nice-to-have list, and a list of ideas.
   so the CPU always has a baud rate counter.
 
 For the BCPU and its internals:
+* While it might slow down the CPU, using the operand field as an address to
+  fetch an argument from might be better.
 * Add interrupt handling, which will require a way of saving
 the program counter somewhere. A call and return instruction
 would be very useful for this, but would require more states
@@ -357,7 +359,7 @@ For the assembler/simulator:
 - Allow the inclusion of other files with an 'include' directive
 - Add primitive macro system
 - Make the assembler smaller by rewriting it
-
+- Rotate does not seem to work, this needs fixing
 
 # References / Appendix
 
@@ -463,7 +465,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['RESET']},
 	  {name: 'ie',    wave: 'x0.................x'},
-	  {name: 'oe',    wave: 'x01...............0x'},
+	  {name: 'oe',    wave: 'x0.................x'},
 	  {name: 'ae',    wave: 'x01...............0x'},
 	  {name: 'o',     wave: 'x0.................x'},
 	  {name: 'i',     wave: 'x.................xx'},  

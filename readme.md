@@ -353,6 +353,11 @@ or at least do the PC+1 in parallel with EXECUTE.
 and accumulator could be used to set the new value of the flag
 register whilst the accumulator is set to the flag register before
 modification.
+* A super minimal forth has been added (not mine) that targets the boot-sector
+for a DOS box. See [r8086.zip][]. This could be used as a template for a
+minimal Forth for this CPU, it would need to be larger as the instruction set
+is more primitive and more would need to be implemented.
+
 
 For the assembler/simulator:
 - Read from a string not a file
@@ -495,6 +500,7 @@ That's all folks!
 [Spartan-6]: https://www.xilinx.com/products/silicon-devices/fpga/spartan-6.html
 [bit.asm]: bit.asm
 [Digilent]: https://store.digilentinc.com/
+[r8086.zip]: r8086.zip
 
 <style type="text/css">
 	body{

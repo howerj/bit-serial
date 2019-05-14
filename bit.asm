@@ -14,7 +14,7 @@ constant halt $80
 variable r0
 variable r1
 variable r2
-variable r4
+variable r3
 variable sp
 
 variable count

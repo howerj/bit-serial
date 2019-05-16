@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O2
 .PHONY: all run simulation viewer clean documentation
 
-all: bit simulation 
+all: bit simulation expr
 
 run: bit bit.hex
 	./bit -r bit.hex

@@ -25,6 +25,7 @@ doxy/latex/*
 embed
 *_envsettings.html
 *.exe
+expr
 filter
 forth
 fth/doc/doxygen/*
@@ -81,6 +82,8 @@ post_translate.vhd
 *.prj
 *.ps
 *.ptwx
+r8086
+r8086/*
 *.rbb
 *.rbd
 reports/

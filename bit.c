@@ -15,11 +15,14 @@
 #define MSIZE            (4096u)
 #define MAX_VARS         (256u)
 #define NELEM(X)         (sizeof(X)/sizeof(X[0]))
+#define MAX_FILE         (128*1024)
+#define MAX_NAME         (32)
+
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
 typedef struct { FILE *in, *out; mw_t ch, leds, switches; } bcpu_io_t;
-typedef struct { char name[32]; int type; mw_t value; } var_t;
-typedef struct { char name[32]; const char *start, *end; int params; } macro_t;
+typedef struct { char name[MAX_NAME]; int type; mw_t value; } var_t;
+typedef struct { char name[MAX_NAME]; const char *start, *end; int params; } macro_t;
 typedef struct { var_t vs[MAX_VARS], unknown[MAX_VARS]; macro_t macros[MAX_VARS]; unsigned long used, data; } assembler_t;
 enum { TYPE_VAR, TYPE_LABEL, TYPE_CONST, TYPE_MACRO };
 enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
@@ -149,7 +152,6 @@ static char *sgets(char *line, size_t length, const char **input) {
 	*input = in + i + 1;
 	return line;
 }
-
 
 static int macro(macro_t *m, size_t length, const char *arg1, const char **input) {
 	assert(m);
@@ -576,7 +578,7 @@ int main(int argc, char **argv) {
 		default:  die("invalid option -- %c", argv[1][i]);
 		}
 	if (compile) {
-		static char program[128*1024] = { 0 };
+		static char program[MAX_FILE] = { 0 };
 		program[fread(program, 1, sizeof program, file)] = '\0';
 		if (assembler(&b, &a, program) < 0)
 			die("assembling file failed");

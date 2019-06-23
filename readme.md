@@ -334,8 +334,10 @@ edited immediately by copying the following text into [GraphvizOnline][].
 	digraph bcpu {
 		reset -> fetch [label="start"]
 		fetch -> execute
+		fetch -> operand [label="flag(IND) = '1' and op < 8"]
 		fetch -> reset  [label="flag(RST) = '1'"]
 		fetch -> halt  [label="flag(HLT) = '1'"]
+		operand -> execute
 		execute -> advance
 		execute -> store   [label="op = 'store'"]
 		execute -> load   [label="op = 'load'"]

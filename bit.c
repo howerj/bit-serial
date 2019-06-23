@@ -21,10 +21,10 @@ typedef struct { char name[80]; int type; mw_t value; } var_t;
 enum { TYPE_VAR, TYPE_LABEL, TYPE_CONST };
 
 static const char *commands[] = { 
-	"or",   "and",   "xor",     "invert",
-	"add",  "sub",   "lshift",  "rshift",
-	"load", "store", "literal", "flags",
-	"jump", "jumpz", "14?",    "15?",
+	"or",     "and",    "xor",     "add",  
+	"lshift", "rshift", "in",      "out",
+	"load",   "store",  "literal", "flags",
+	"jump",   "jumpz",  "jumpi",   "pc",
 };
 
 static int instruction(const char *c) {
@@ -160,9 +160,6 @@ static int assemble(bcpu_t *b, FILE *input) {
 			} else if (!strcmp(command, "clr")) {
 				assert(used < MSIZE);
 				b->m[used++] = (instruction("literal") << 12u) | 0;
-			} else if (!strcmp(command, "invert")) {
-				assert(used < MSIZE);
-				b->m[used++] = (instruction("invert") << 12u) | 0;
 			} else {
 				var_t *v = lookup(vs, MAX_VARS, command);
 				if (!v) {
@@ -283,7 +280,7 @@ static inline int trace(bcpu_t *b, bcpu_io_t *io, FILE *tracer,
 	if (!tracer)
 		return 0;
 	assert(cmd < (sizeof(commands)/sizeof(commands[0])));
-	char cbuf[8] = { 0 };
+	char cbuf[9] = { 0 };
 	snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]);
 	return fprintf(tracer, "%4x: %4x %2x:%s %4x %4x %4x %4x\n", 
 			cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
@@ -319,29 +316,41 @@ static inline mw_t shiftr(const int type, const mw_t value, unsigned shift) {
 	return type ? rotr(value, shift) : value >> shift;
 }
 
+enum {
+	fCy,
+	fZ,
+	fNg,
+	fPAR,
+
+	fROT,
+	fR,
+	fUN,
+	fHLT,
+};
+
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
 	const mw_t parry = !!(*carry & 1u);
 	const mw_t r = a + b + parry;
-	*carry &= ~1u;
+	*carry &= ~(1u << fCy);
 	if (r < (a + parry) && r < (b + parry))
-		*carry |= 1;
+		*carry |= (1u << fCy);
 	return r;
 }
 
-static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
+/*static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
 	assert(under);
 	const mw_t r = a - b;
 	*under &= ~2u;
 	*under |= b > a;
 	return r;
-}
+}*/
 
-static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr) {
+static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr) {
 	assert(b);
 	assert(io);
 	addr &= 0x0FFFu;
-	addr |= (!!(flg & (1u << 11))) << 15;
+	addr |= ((mw_t)!!is_io) << 15;
 	if (addr & 0x8000u) { /* io */
 		switch (addr & 0x7) {
 		case 0: return io->switches;
@@ -352,11 +361,11 @@ static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr) {
 	return b->m[addr % MSIZE];
 }
 
-static inline void bstore(bcpu_t *b, bcpu_io_t *io, mw_t flg, mw_t addr, mw_t val) {
+static inline void bstore(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr, mw_t val) {
 	assert(b);
 	assert(io);
 	addr &= 0x0FFFu;
-	addr |= (!!(flg & (1u << 11))) << 15;
+	addr |= ((mw_t)!!is_io) << 15;
 	if (addr & 0x8000u) { /* io */
 		switch (addr & 0x7) {
 		case 0: io->leds = val; break;
@@ -388,42 +397,42 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
-		const int rot    = !!(flg & (1u << 5));
+		const int rot    = !!(flg & (1u << fROT));
 		if (CONFIG_TRACER_ON)
 			trace(b, io, tracer, count, pc, flg, acc, op1, cmd);
-		if (flg & (1u << 7)) /* HALT */
+		if (flg & (1u << fHLT)) /* HALT */
 			goto halt;
-		if (flg & (1u << 6)) { /* RESET */
+		if (flg & (1u << fR)) { /* RESET */
 			pc = 0;
 			acc = 0;
 			flg = 0;
 		}
-		flg &= 0xFFE3;      /* clear flags we are about to set */
-		flg |= ((!acc) << 2);             /* set zero flag     */
-		flg |= ((!!(acc & 0x8000)) << 3); /* set negative flag */
-		flg |= (!(bits(acc) & 1u)) << 4;  /* set parity bit    */
+		flg &= ~((1u << fZ) | (1u << fNg) | (1u << fPAR));
+		flg |= ((!acc) << fZ);              /* set zero flag     */
+		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
+		flg |= (!(bits(acc) & 1u)) << fPAR; /* set parity bit    */
 
 		pc++;
 		switch (cmd) {
 		case 0x0: acc |= op1;                        break; /* OR      */
 		case 0x1: acc &= (0xF000 | op1);             break; /* AND     */
 		case 0x2: acc ^= op1;                        break; /* XOR     */
-		case 0x3: acc = ~acc;                        break; /* INVERT  */
+		case 0x3: acc = add(acc, op1, &flg);         break; /* ADD     */
 
-		case 0x4: acc = add(acc, op1, &flg);         break; /* ADD     */
-		case 0x5: acc = sub(acc, op1, &flg);         break; /* SUB     */
-		case 0x6: acc = shiftl(rot, acc, bits(op1)); break; /* LSHIFT  */
-		case 0x7: acc = shiftr(rot, acc, bits(op1)); break; /* RSHIFT  */
+		case 0x4: acc = shiftl(rot, acc, bits(op1)); break; /* LSHIFT  */
+		case 0x5: acc = shiftr(rot, acc, bits(op1)); break; /* RSHIFT  */
+		case 0x6: acc = bload(b, io, 1, op1);        break; /* IN      */
+		case 0x7: bstore(b, io, 1, op1, acc);        break; /* OUT     */
 
-		case 0x8: acc = bload(b, io, flg, op1);      break; /* LOAD    */
-		case 0x9: bstore(b, io, flg, op1,  acc);     break; /* STORE   */
+		case 0x8: acc = bload(b, io, 0, op1);        break; /* LOAD    */
+		case 0x9: bstore(b, io, 0, op1, acc);        break; /* STORE   */
 		case 0xA: acc = op1;                         break; /* LITERAL */
 		case 0xB: t = flg; flg= (~op1 & acc) | (op1 & flg); acc = t; break; /* FLAGS   */
 
 		case 0xC: pc = op1;                          break; /* JUMP    */
 		case 0xD: if (!acc) pc = op1;                break; /* JUMPZ   */
-		/*   0xE: Reserved                                             */
-		/*   0xF: Reserved                                             */
+		case 0xE: pc = acc;                          break; /* JUMPI   */
+		case 0xF: acc = pc;                          break; /* PC      */
 
 		default: r = -1; goto halt;
 		}

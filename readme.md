@@ -136,11 +136,8 @@ as a value or an address.
 |   or        | acc = acc OR op                          | OR  with 12-bit immediate value   |
 |   and       | acc = acc AND (op OR $F000)              | AND with 12-bit immediate value   |
 |   xor       | acc = acc XOR op                         | XOR with 12-bit immediate value   |
-|   invert    | acc = INVERT acc                         | Bit-wise invert                   |
 |   add       | acc = acc + op + carry                   | Add with 12-bit immediate value,  |
 |             | carry = set/clr                          | Carry added in and set.           |
-|   sub       | acc = (acc - op) - borrow                | Subtract with 12-bit immediate    |
-|             | borrow = set/clr                         | value, borrow used and set/clr    |
 |   lshift    | if alternate flag set:                   | Left rotate *OR* Left Shift by    |
 |             | acc = rotl(acc, bitcount(op)             | bit-count of 12-bit operand.      |
 |             | else                                     | Rotate/Shift selected by CPU flag |
@@ -149,8 +146,10 @@ as a value or an address.
 |             | acc = rotr(acc, bitcount(op)             | bit-count of 12-bit operand.      |
 |             | else                                     | Rotate/Shift selected by CPU flag |
 |             | acc = acc &gt;&gt; bitcount(op)          |                                   |
-|   load      | acc = memory(op OR (addr15 &lt;&lt; 15)) | Load memory location              |
-|   store     | memory(op OR (addr15 &lt;&lt; 15)) = acc | Store to memory location          |
+|   in        | acc = io(op)                             | Load memory location              |
+|   out       | io(op) = acc                             | Store to memory location          |
+|   load      | acc = memory(op)                         | Load memory location              |
+|   store     | memory(op) = acc                         | Store to memory location          |
 |   literal   | acc = op                                 | Load literal                      |
 |   flags     | acc = flags, flags=(~op&acc)|(op&flags)  | Exchange flags with accumulator   |
 |   jump      | pc = op                                  | Unconditional Jump to 12-bit      |
@@ -158,23 +157,22 @@ as a value or an address.
 |   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |
 |             | pc = op                                  | Counter to 12-bit address only if |
 |             |                                          | accumulator is non-zero           |
-|   Unused    |                                          |                                   |
+|   jumpi     | pc = acc                                 | 'op' unused, Jump Through Accum.  |
+|   pc        | acc = pc                                 | 'op' unused, Get Program Counter  |
 
 The flags register contains the following flags:
 
 | Flag-Bit | Name        | Description                    |
 | -------- | ----------- | ------------------------------ |
 |    0     | carry       | Carry Flag                     |
-|    1     | borrow      | Borrow/Under Flow              |
-|    2     | zero        | Is accumulator zero?           |
-|    3     | negative    | Is accumulator negative?       |
-|    4     | Parity      | Parity of accumulator          |
-|    5     | Alternate   | Activate alternate instruction |
-|    6     | Reset       | Set to reset the CPU           |
+|    1     | zero        | Is accumulator zero?           |
+|    2     | negative    | Is accumulator negative?       |
+|    3     | Parity      | Parity of accumulator          |
+|    4     | Alternate   | Activate alternate instruction |
+|    5     | Reset       | Set to reset the CPU           |
+|    6     | Reserved    |                                |
 |    7     | Halt        | Set to halt the CPU            |
-|   8-10   | Reserved    |                                |
-|    11    | addr15      | Top bit of LOAD and STORE      |
-|  12-15   | Reserved    |                                |
+|   7-15   | Reserved    |                                |
 
 The zero, parity and negative flags are updated before each instruction is
 executed and depend only on the contents on the accumulator. They are updated
@@ -312,13 +310,6 @@ This is more of a nice-to-have list, and a list of ideas.
   multiplication types could have modules that provide those different
   interfaces.
 * Port a simple, very cut down, Forth
-* Do the program counter addition in parallel with the execution, or fetch
-* Make an N-Bit version of the tool-chain, the VHDL CPU can be of an arbitrary
-  width (so long as N is greater or equal to 8), but without the tool-chain to
-  support that, it is kind of useless.
-* Use a LFSR instead of a Program Counter? (see
-  <https://news.ycombinator.com/item?id=11978900>)
-* Add an interrupt request line
 * A good project to use this CPU for would be to reimplement the VT100 terminal
   emulator used in <https://github.com/howerj/forth-cpu>. I could perhaps
   reimplement the core, which came from <http://www.javiervalcarce.eu/html/vhdl-vga80x40-en.html>.
@@ -331,16 +322,19 @@ This is more of a nice-to-have list, and a list of ideas.
   this with the VGA core) would mean even fewer resources would be needed.
 * Add a timer peripheral into the CPU core itself so it is always available. It
   should be capable of generating interrupts for the CPU. This could be used
-  so the CPU always has a baud rate counter.
+  so the CPU always has a baud rate counter. Three delay lines connected to
+  each other could be used if a counter is too expensive, each on divides the
+  clock by 2^N.
 
 For the BCPU and its internals:
 * While it might slow down the CPU, using the operand field as an address to
   fetch an argument from might be better.
+* Add an interrupt request line.
 * Add interrupt handling, which will require a way of saving
-the program counter somewhere. A call and return instruction
-would be very useful for this, but would require more states
-and a stack pointer register. Main memory could be used for
-the stack.
+the program counter somewhere. The easiest way of implementing this would
+be store the current program counter in a fixed address (say '0xFFF')
+whilst shifting in the current value from that same address. An interrupt
+request would have to disable interrupts.
 * Allow the CPU to be customized via generics, such as:
   * Type of instructions available
 * Try to merge ADVANCE into one of the other states if possible,

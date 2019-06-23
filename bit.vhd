@@ -38,20 +38,19 @@ end;
 architecture rtl of bcpu is
 	type state_t is (RESET, FETCH, EXECUTE, STORE, LOAD, ADVANCE, HALT);
 	type cmd_t is (
-		iOR,   iAND,   iXOR,     iINVERT, 
-		iADD,  iSUB,   iLSHIFT,  iRSHIFT,
-		iLOAD, iSTORE, iLITERAL, iFLAGS, 
-		iJUMP, iJUMPZ, i14,      i15
+		iOR,     iAND,    iXOR,     iADD, 
+		iLSHIFT, iRSHIFT, iIN,      iOUT,
+		iLOAD,   iSTORE,  iLITERAL, iFLAGS, 
+		iJUMP,   iJUMPZ,  iJUMPI,   iPC
 	);
 	constant Cy:     integer :=  0; -- Carry; set by addition
-	constant U:      integer :=  1; -- Underflow/Borrow; set by subtraction 
-	constant Z:      integer :=  2; -- Accumulator is zero
-	constant Ng:     integer :=  3; -- Accumulator is negative
-	constant PAR:    integer :=  4; -- Parity of accumulator
-	constant ROT:    integer :=  5; -- Use rotate instead of shift
-	constant R:      integer :=  6; -- Reset CPU
+	constant Z:      integer :=  1; -- Accumulator is zero
+	constant Ng:     integer :=  2; -- Accumulator is negative
+	constant PAR:    integer :=  3; -- Parity of accumulator
+	constant ROT:    integer :=  4; -- Use rotate instead of shift
+	constant R:      integer :=  5; -- Reset CPU
+	constant UN:     integer :=  6; -- Unused flag
 	constant HLT:    integer :=  7; -- Halt CPU
-	constant ADDR15: integer := 11; -- Highest bit of LOAD/STORE address
 
 	type registers_t is record
 		state:  state_t;    -- state machine register
@@ -59,7 +58,6 @@ architecture rtl of bcpu is
 		first:  boolean;    -- First flag, for setting up an instruction
 		last4:  boolean;    -- Are we processing the last 4 bits of the instruction?
 		tcarry: std_ulogic; -- temporary carry flag
-		tunder: std_ulogic; -- temporary underflow flag
 		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
 		acc:    std_ulogic_vector(N - 1 downto 0); -- accumulator
 		pc:     std_ulogic_vector(N - 1 downto 0); -- program counter
@@ -74,7 +72,6 @@ architecture rtl of bcpu is
 		first  => true,
 		last4  => false,
 		tcarry => 'X',
-		tunder => 'X',
 		dline  => (others => '0'),
 		acc    => (others => 'X'),
 		pc     => (others => 'X'),
@@ -170,7 +167,6 @@ begin
 		acin <= '0' after delay;
 		f        <= c after delay;
 		f.dline  <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
-		f.tunder <= '1' after delay;
 
 		if c.first then
 			assert bit_count(c.dline) = 0 report "too many dline bits";
@@ -254,9 +250,6 @@ begin
 				when iXOR =>
 					f.op  <= "0" & c.op (c.op'high downto 1) after delay;
 					f.acc <= (c.op(0) xor c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
-				when iINVERT =>
-					f.acc <= (not c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
-
 				when iADD =>
 					f.acc <= "0" & c.acc(c.acc'high downto 1) after delay;
 					f.op  <= "0" & c.op(c.op'high downto 1)   after delay;
@@ -265,15 +258,6 @@ begin
 					acin  <= c.flags(Cy) after delay;
 					f.acc(f.acc'high) <= ares after delay;
 					f.flags(Cy) <= acout after delay;
-				when iSUB =>
-					f.acc <= "0" & c.acc(c.acc'high downto 1) after delay;
-					f.op  <= "0" & c.op(c.op'high downto 1)   after delay;
-					add1  <=    c.acc(0) after delay;
-					add2  <= not c.op(0) after delay;
-					acin  <= c.tunder    after delay;
-					f.acc(f.acc'high) <= ares after delay;
-					f.tunder    <= acout after delay;
-					f.flags(U)  <= acout after delay;
 				when iLSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
@@ -290,21 +274,32 @@ begin
 						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
-
-				when iLOAD => -- Could set a flag so we loaded/store via accumulator 
+				when iIN =>
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
 					if last = '1' then
-						a <= c.flags(ADDR15) after delay;
+						a <= '1' after delay;
 					end if;
+					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+					f.choice <= LOAD after delay;
+
+				when iOUT =>
+					ae     <=     '1' after delay;
+					a      <= c.op(0) after delay;
+					if last = '1' then
+						a <= '1' after delay;
+					end if;
+					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+					f.choice <= STORE after delay;
+
+				when iLOAD =>
+					ae     <=     '1' after delay;
+					a      <= c.op(0) after delay;
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= LOAD after delay;
 				when iSTORE =>
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
-					if last = '1' then
-						a <= c.flags(ADDR15) after delay;
-					end if;
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
 				when iLITERAL =>
@@ -317,10 +312,10 @@ begin
 					f.op    <=        "0" & c.op(c.op'high downto 1) after delay;
 
 				when iJUMP =>
-					ae     <=     '1' after delay;
-					a      <= c.op(0) after delay;
-					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
-					f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
+					ae       <=     '1' after delay;
+					a        <= c.op(0) after delay;
+					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
+					f.pc     <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
 					f.choice <= FETCH after delay;
 				when iJUMPZ =>
 					if c.flags(Z) = jumpz then
@@ -330,8 +325,13 @@ begin
 						f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
 						f.choice <= FETCH after delay;
 					end if;
-				when i14 => -- N/A
-				when i15 => -- N/A
+				when iJUMPI =>
+					f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
+					f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+					f.choice <= FETCH after delay;
+				when iPC =>
+					f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
+					f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1) after delay;
 				end case;
 			end if;
 

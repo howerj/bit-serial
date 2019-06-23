@@ -13,17 +13,21 @@
 
 #define CONFIG_TRACER_ON (1)
 #define MSIZE            (4096u)
-#define MAX_VARS         (4096u)
+#define MAX_VARS         (256u)
+#define NELEM(X)         (sizeof(X)/sizeof(X[0]))
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
 typedef struct { FILE *in, *out; mw_t ch, leds, switches; } bcpu_io_t;
-typedef struct { char name[80]; int type; mw_t value; } var_t;
-enum { TYPE_VAR, TYPE_LABEL, TYPE_CONST };
+typedef struct { char name[32]; int type; mw_t value; } var_t;
+typedef struct { char name[32]; const char *start, *end; int params; } macro_t;
+typedef struct { var_t vs[MAX_VARS], unknown[MAX_VARS]; macro_t macros[MAX_VARS]; unsigned long used, data; } assembler_t;
+enum { TYPE_VAR, TYPE_LABEL, TYPE_CONST, TYPE_MACRO };
+enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 
 static const char *commands[] = { 
 	"or",     "and",    "xor",     "add",  
-	"lshift", "rshift", "in",      "out",
-	"load",   "store",  "literal", "flags",
+	"lshift", "rshift", "load",    "store",
+	"in",     "out",    "literal", "flags",
 	"jump",   "jumpz",  "jumpi",   "pc",
 };
 
@@ -121,22 +125,73 @@ static void die(const char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
-static int assemble(bcpu_t *b, FILE *input) {
+static char *sgets(char *line, size_t length, const char **input) {
+	assert(line);
+	assert(input && *input);
+	int ch = 0;
+	size_t i = 0;
+	const char *in = *input;
+	if (length == 0)
+		return NULL;
+	if (length == 1) {
+		line[0] = '\0';
+		return line;
+	}
+	
+	for (i = 0; (i < (length - 1)) && (ch = in[i]); i++) {
+		line[i] = ch;
+		if (ch == '\n')
+			break;
+	}
+	if (!i && !ch)
+		return NULL;
+	line[i + 1] = '\0';
+	*input = in + i + 1;
+	return line;
+}
+
+
+static int macro(macro_t *m, size_t length, const char *arg1, const char **input) {
+	assert(m);
+	assert(input && *input);
+	assert(arg1);
+	size_t i = 0;
+	for (i = 0; i < length; i++)
+		if (m->name[0])
+			m++;
+		else
+			break;
+	if (i >= length)
+		return -1;
+	memset(m->name, 0, sizeof(m->name));
+	strncpy(m->name, arg1, sizeof(m->name) - 1);
+	const char *in = *input;
+	const char terminator[] = ".end";
+	const char *end = strstr(in, terminator);
+	if (!end)
+		return -2;
+	m->start = in;
+	m->end = end;
+	*input = m->end + (sizeof(terminator) - 1);
+	return 0;
+}
+
+static const macro_t *get(macro_t *m, size_t length, const char *name) {
+	assert(m);
+	assert(name);
+	size_t i = 0;
+	for (i = 0; i < length; i++)
+		if (!strcmp(m->name, name))
+			return m;
+		else
+			m++;
+	return NULL;
+}
+
+static int assemble(bcpu_t *b, assembler_t *a, const char *input) { /* super lazy assembler */
 	assert(b);
 	assert(input);
-	b->pc = 0;
-	b->acc = 0;
-	memset(b->m, 0, sizeof b->m);
-	unsigned long used = 0, data = MSIZE - 1;
-	var_t *vs      = calloc(sizeof *vs,      MAX_VARS);
-	var_t *unknown = calloc(sizeof *unknown, MAX_VARS);
-	if (!vs || !unknown) {
-		free(vs);
-		free(unknown);
-		error("allocation failed");
-		return -1;
-	}
-	for (char line[256] = { 0 }; fgets(line, sizeof line, input); memset(line, 0, sizeof line)) {
+	for (char line[256] = { 0 }; sgets(line, sizeof line, &input); memset(line, 0, sizeof line)) {
 		char command[80] = { 0 }, arg1[80] = { 0 }, arg2[80] = { 0 };
 		skip(line);
 		unsigned op0 = 0, op1 = 0, op2 = 0;
@@ -145,7 +200,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 		const int arg1num = sscanf(arg1,    "$%x", &op1) == 1;
 		const int arg2num = sscanf(arg2,    "$%x", &op2) == 1;
 
-		if (used >= data) {
+		if (a->used >= a->data) {
 			error("program space full");
 			goto fail;
 		}
@@ -153,20 +208,38 @@ static int assemble(bcpu_t *b, FILE *input) {
 			/* do nothing */
 		} else if (args == 1) {
 			if (arg0num) {
-				b->m[used++] = op0;
-			} else if (!strcmp(command, "nop")) {
-				assert(used < MSIZE);
-				b->m[used++] = 0;
-			} else if (!strcmp(command, "clr")) {
-				assert(used < MSIZE);
-				b->m[used++] = (instruction("literal") << 12u) | 0;
+				b->m[a->used++] = op0;
+			} else if (!strcmp(command, "jumpi")) {
+				assert(a->used < MSIZE);
+				b->m[a->used++] = (instruction("jumpi") << 12u) | 0;
+			} else if (!strcmp(command, "pc")) {
+				assert(a->used < MSIZE);
+				b->m[a->used++] = (instruction("pc") << 12u) | 0;
 			} else {
-				var_t *v = lookup(vs, MAX_VARS, command);
+				var_t *v = lookup(a->vs, NELEM(a->vs), command);
 				if (!v) {
-					error("invalid command: %s", line);
-					goto fail;
+					const macro_t *m = get(a->macros, NELEM(a->macros), command);
+					if (!m) {
+						error("invalid command: %s", line);
+						goto fail;
+					}
+					const size_t l = m->end - m->start;
+					char *eval = malloc(l + 1);
+					if (!eval) {
+						error("out of memory");
+						goto fail;
+					}
+					memcpy(eval, m->start, l);
+					eval[l] = '\0';
+					const int r = assemble(b, a, eval);
+					free(eval);
+					if (r < 0) {
+						error("macro eval failed: %d", r);
+						goto fail;
+					}
+				} else {
+					b->m[a->used++] = v->value;
 				}
-				b->m[used++] = v->value;
 			}
 		} else if (args == 2) {
 			if (arg1num && op1 > 0x0FFFu) {
@@ -180,17 +253,23 @@ static int assemble(bcpu_t *b, FILE *input) {
 						error("invalid allocate: %s", arg1);
 						goto fail;
 					}
-					data -= op1;
+					a->data -= op1;
 				} else if (!strcmp(command, ".variable")) {
-					const int added = reference(vs, MAX_VARS, arg1, TYPE_VAR, data--, 1);
+					const int added = reference(a->vs, NELEM(a->vs), arg1, TYPE_VAR, a->data--, 1);
 					if (added < 0) {
 						error("variable? %d/%s", added, arg1);
 						goto fail;
 					}
 				} else if (!strcmp(command, ".label")) {
-					const int added = reference(vs, MAX_VARS, arg1, TYPE_LABEL, used, 1);
+					const int added = reference(a->vs, NELEM(a->vs), arg1, TYPE_LABEL, a->used, 1);
 					if (added < 0) {
 						error("label? %d/%s", added, arg1);
+						goto fail;
+					}
+				} else if (!strcmp(command, ".macro")) {
+					const int mac = macro(a->macros, NELEM(a->macros), arg1, &input);
+					if (mac < 0) {
+						error("macro? %d/%s", mac, arg1);
 						goto fail;
 					}
 				} else {
@@ -199,9 +278,9 @@ static int assemble(bcpu_t *b, FILE *input) {
 				}
 			} else {
 				if (!arg1num) {
-					var_t *v = lookup(vs, MAX_VARS, arg1);
+					var_t *v = lookup(a->vs, NELEM(a->vs), arg1);
 					if (!v) {
-						const int added = reference(unknown, MAX_VARS, arg1, TYPE_LABEL, used, 0);
+						const int added = reference(a->unknown, NELEM(a->unknown), arg1, TYPE_LABEL, a->used, 0);
 						if (added < 0) {
 							error("forward reference? %d/%s", added, arg1);
 							goto fail;
@@ -211,13 +290,13 @@ static int assemble(bcpu_t *b, FILE *input) {
 						op1 = v->value;
 					}
 				}
-				assert(used < MSIZE);
-				b->m[used++] = (((mw_t)inst) << 12) | op1;
+				assert(a->used < MSIZE);
+				b->m[a->used++] = (((mw_t)inst) << 12) | op1;
 			}
 		} else if (args == 3) {
 			if (!strcmp(command, ".set")) {
 				if (!arg1num) {
-					var_t *v = lookup(vs, MAX_VARS, arg1);
+					var_t *v = lookup(a->vs, NELEM(a->vs), arg1);
 					if (!v) {
 						error("unknown variable: %s", arg1);
 						goto fail;
@@ -230,7 +309,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 				}
 
 				if (!arg2num) {
-					var_t *v = lookup(vs, MAX_VARS, arg2);
+					var_t *v = lookup(a->vs, NELEM(a->vs), arg2);
 					if (!v) {
 						error("unknown variable: %s", arg2);
 						goto fail;
@@ -244,7 +323,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 					error("not a number: %s", arg2);
 					goto fail;
 				}
-				const int added = reference(vs, MAX_VARS, arg1, TYPE_CONST, op2, 0);
+				const int added = reference(a->vs, NELEM(a->vs), arg1, TYPE_CONST, op2, 0);
 				if (added < 0) {
 					error("constant? %d/%s", added, arg1);
 					goto fail;
@@ -258,18 +337,27 @@ static int assemble(bcpu_t *b, FILE *input) {
 			goto fail;
 		}
 	}
-	const char *unknown_label = patch(b, vs, MAX_VARS, unknown, MAX_VARS);
+	const char *unknown_label = patch(b, a->vs, NELEM(a->vs), a->unknown, NELEM(a->unknown));
 	if (unknown_label) {
 		error("invalid reference: %s", unknown_label);
 		goto fail;
 	}
-	free(vs);
-	free(unknown);
 	return 0;
 fail:
-	free(vs);
-	free(unknown);
 	return -1;
+}
+
+
+static int assembler(bcpu_t *b, assembler_t *a, const char *input) {
+	assert(a);
+	assert(b);
+	assert(input);
+	b->pc = 0;
+	b->acc = 0;
+	memset(b->m, 0, sizeof b->m);
+	a->used = 0; 
+	a->data = MSIZE - 1;
+	return assemble(b, a, input);
 }
 
 static inline int trace(bcpu_t *b, bcpu_io_t *io, FILE *tracer, 
@@ -315,18 +403,6 @@ static inline mw_t shiftl(const int type, const mw_t value, unsigned shift) {
 static inline mw_t shiftr(const int type, const mw_t value, unsigned shift) {
 	return type ? rotr(value, shift) : value >> shift;
 }
-
-enum {
-	fCy,
-	fZ,
-	fNg,
-	fPAR,
-
-	fROT,
-	fR,
-	fUN,
-	fHLT,
-};
 
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
@@ -412,20 +488,21 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
 		flg |= (!(bits(acc) & 1u)) << fPAR; /* set parity bit    */
 
+		const mw_t lop = !(cmd & 0x8) && (flg & (1u << fIND)) ? bload(b, io, 0, op1) : op1; 
 		pc++;
 		switch (cmd) {
-		case 0x0: acc |= op1;                        break; /* OR      */
-		case 0x1: acc &= (0xF000 | op1);             break; /* AND     */
-		case 0x2: acc ^= op1;                        break; /* XOR     */
-		case 0x3: acc = add(acc, op1, &flg);         break; /* ADD     */
+		case 0x0: acc |= lop;                        break; /* OR      */
+		case 0x1: acc &= (0xF000 | lop);             break; /* AND     */
+		case 0x2: acc ^= lop;                        break; /* XOR     */
+		case 0x3: acc = add(acc, lop, &flg);         break; /* ADD     */
 
-		case 0x4: acc = shiftl(rot, acc, bits(op1)); break; /* LSHIFT  */
-		case 0x5: acc = shiftr(rot, acc, bits(op1)); break; /* RSHIFT  */
-		case 0x6: acc = bload(b, io, 1, op1);        break; /* IN      */
-		case 0x7: bstore(b, io, 1, op1, acc);        break; /* OUT     */
+		case 0x4: acc = shiftl(rot, acc, bits(lop)); break; /* LSHIFT  */
+		case 0x5: acc = shiftr(rot, acc, bits(lop)); break; /* RSHIFT  */
+		case 0x6: acc = bload(b, io, 0, lop);        break; /* LOAD    */
+		case 0x7: bstore(b, io, 0, lop, acc);        break; /* STORE   */
 
-		case 0x8: acc = bload(b, io, 0, op1);        break; /* LOAD    */
-		case 0x9: bstore(b, io, 0, op1, acc);        break; /* STORE   */
+		case 0x8: acc = bload(b, io, 1, op1);        break; /* IN      */
+		case 0x9: bstore(b, io, 1, op1, acc);        break; /* OUT     */
 		case 0xA: acc = op1;                         break; /* LITERAL */
 		case 0xB: t = flg; flg= (~op1 & acc) | (op1 & flg); acc = t; break; /* FLAGS   */
 
@@ -478,12 +555,13 @@ static FILE *fopen_or_die(const char *file, const char *mode) {
 int main(int argc, char **argv) {
 	int compile = 0, run = 0, cycles = 0x1000;
 	static bcpu_t b = { 0, 0, 0, { 0 } };
+	static assembler_t a;
 	bcpu_io_t io = { .in = stdin, .out = stdout };
-	FILE *program = stdin, *trace = stderr, *hex = NULL;
+	FILE *file = stdin, *trace = stderr, *hex = NULL;
 	if (argc < 2)
 		die("usage: %s -trashf input? out.hex?", argv[0]);
 	if (argc >= 3)
-		program = fopen_or_die(argv[2], "rb");
+		file = fopen_or_die(argv[2], "rb");
 	if (argc >= 4)
 		hex     = fopen_or_die(argv[3], "wb");
 	for (size_t i = 0; argv[1][i]; i++)
@@ -497,8 +575,16 @@ int main(int argc, char **argv) {
 		case 'f': cycles  = 0;      break;
 		default:  die("invalid option -- %c", argv[1][i]);
 		}
-	if ((compile ? assemble(&b, program) : load(&b, program)) < 0)
+	if (compile) {
+		static char program[128*1024] = { 0 };
+		program[fread(program, 1, sizeof program, file)] = '\0';
+		if (assembler(&b, &a, program) < 0)
+			die("assembling file failed");
+	} else {
+		if (load(&b, file) < 0)
 			die("loading hex file failed");
+	}
+
 	if (hex && save(&b, hex) < 0)
 		die("saving file failed");
 	if (run && bcpu(&b, &io, trace, cycles) < 0)

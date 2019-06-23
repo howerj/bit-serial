@@ -10,37 +10,78 @@
 
 ; A simple test program, keeping adding one to
 ; a variable until it is larger than $10, then halt
-.constant halt $80
+.constant fCy  $1
+.constant fZ   $2
+.constant fNg  $4
+.constant fPar $8
+.constant fRot $10
+.constant fR   $20
+.constant fInd $40
+.constant fHlt $80
 
 .variable irq
+.variable allset
 .variable r0
 .variable r1
 .variable r2
 .variable r3
 .variable sp
-.variable count
-.set count $3
+.variable rp
+
+.set allset $FFFF
+
+.macro halt
+	literal fHlt
+	flags $7F
+.end
+
+.macro invert ; indirect flag must be on
+	xor allset
+.end
+
+.macro nop
+	or $0
+.end
+
+.macro clr
+	literal $0
+.end
+
+.macro inc
+	add $1
+.end
 
 .label entry
-	or $0        ; nop - also all zeros, must be first instruction
+	$0           ; all zeros, must be first instruction for 'nop'
+	$1           ; '1', must be second instruction for 'inc' to work
 	clr          ; clear accumulator
 	flags $0     ; clear all flags
 	clr          ; discard accumulator
 
 	literal $2   ; load 2
 	lshift $0FFF ; shift this to high bits
-	or $48       ; load value to store
-	out   $1     ; store in I/O register
+	or     $48   ; load value to store
+	out    $1    ; store in I/O register
 .label start
-	load  count ; 
+
+.variable count
+.set count $3
+	load  count
 	add   $1    ; add 1 to count
 	and   $F    ; % 15
 	store count ; save result
 	flags $FFF  ; get flags
-	and   $2    ; mask off zero flag
+	and   fZ    ; mask off zero flag
 	jumpz start ; jump back to start if non-zero
 
 .label end
-	literal halt
-	flags $7F ; halt
+	halt
  
+.label call
+	; TODO
+	; - Increment SP
+	; - Store SP back
+	; - Store PC
+	jumpi
+
+

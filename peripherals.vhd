@@ -34,19 +34,19 @@ architecture rtl of peripherals is
 	constant addr_length: positive := W;
 
 	type registers_t is record
-		a:  std_ulogic_vector(N - 1 downto 0);
-		i:  std_ulogic_vector(N - 1 downto 0);
-		o:  std_ulogic_vector(N - 1 downto 0);
-		ld: std_ulogic_vector(ld'range);
-		ie: std_ulogic;
+		r_a:  std_ulogic_vector(N - 1 downto 0);
+		r_i:  std_ulogic_vector(N - 1 downto 0);
+		r_o:  std_ulogic_vector(N - 1 downto 0);
+		r_ld: std_ulogic_vector(ld'range);
+		r_ie: std_ulogic;
 	end record;
 
 	constant registers_default: registers_t := (
-		a  => (others => '0'),
-		i  => (others => '0'),
-		o  => (others => '0'),
-		ld => (others => '0'),
-		ie => '0'
+		r_a  => (others => '0'),
+		r_i  => (others => '0'),
+		r_o  => (others => '0'),
+		r_ld => (others => '0'),
+		r_ie => '0'
 	);
 
 	signal c, f: registers_t := registers_default;
@@ -73,13 +73,13 @@ architecture rtl of peripherals is
 	signal io_addr: std_ulogic_vector(2 downto 0);
 begin
 	-- tx    <= c.c after g.delay;
-	io    <= c.a(c.a'high) = '1' and ae = '0' after g.delay;
-	io_addr <= c.a(io_addr'range);
-	write <= true when (c.ie and (c.ie xor f.ie)) = '1' else false after g.delay;
-	ld    <= c.ld after g.delay;
-	o     <= c.o(0) after g.delay;
-	tx_fifo_data <= c.i(tx_fifo_data'range);
-	reg   <= c.i(reg'range);
+	io    <= c.r_a(c.r_a'high) = '1' and ae = '0' after g.delay;
+	io_addr <= c.r_a(io_addr'range);
+	write <= true when (c.r_ie and (c.r_ie xor f.r_ie)) = '1' else false after g.delay;
+	ld    <= c.r_ld after g.delay;
+	o     <= c.r_o(0) after g.delay;
+	tx_fifo_data <= c.r_i(tx_fifo_data'range);
+	reg   <= c.r_i(reg'range);
 
 	-- TODO: Selected between raw UART pin input/output and the UART module
 	-- with a generic. This will allow a bit-banged UART driver to be developed.
@@ -116,9 +116,9 @@ begin
 		port map (
 			clk  => clk,
 			dwe  => dwe,
-			addr => f.a(f.a'high - 4 downto 0),
+			addr => f.r_a(f.r_a'high - 4 downto 0),
 			dre  => dre,
-			din  => f.i,
+			din  => f.r_i,
 			dout => dout);
 
 	process (clk, rst)
@@ -138,8 +138,8 @@ begin
 		rx_fifo_data, rx_fifo_empty, rx_fifo_full, tx_fifo_empty, tx_fifo_full)
 	begin
 		f    <= c after g.delay;
-		f.o  <= dout after g.delay;
-		f.ie <= ie after g.delay;
+		f.r_o  <= dout after g.delay;
+		f.r_ie <= ie after g.delay;
 		dre  <= '1' after g.delay;
 		dwe  <= '0' after g.delay;
 		tx_fifo_we <= '0' after g.delay; 
@@ -148,23 +148,23 @@ begin
 		clock_reg_rx_we <= '0' after g.delay;
 		control_reg_we <= '0' after g.delay;
 
-		if ae = '1' then f.a <= a      & c.a(c.a'high downto 1) after g.delay; end if;
-		if oe = '1' then f.o <= c.o(0) & c.o(c.o'high downto 1) after g.delay; end if;
-		if ie = '1' then f.i <= i      & c.i(c.i'high downto 1) after g.delay; end if;
+		if ae = '1' then f.r_a <= a      & c.r_a(c.r_a'high downto 1) after g.delay; end if;
+		if oe = '1' then f.r_o <= c.r_o(0) & c.r_o(c.r_o'high downto 1) after g.delay; end if;
+		if ie = '1' then f.r_i <= i      & c.r_i(c.r_i'high downto 1) after g.delay; end if;
 
 		if oe = '0' and ae = '0' then
 			if io = false then
 				dre <= '1' after g.delay;
 			else
-				f.o           <= (others => '0') after g.delay;
+				f.r_o           <= (others => '0') after g.delay;
 				case io_addr is
-				when "000" => f.o(sw'range) <= sw after g.delay;
+				when "000" => f.r_o(sw'range) <= sw after g.delay;
 				when "001" =>
-					f.o(7 downto 0) <= rx_fifo_data;
-					f.o(8)          <= rx_fifo_empty;
-					f.o(9)          <= rx_fifo_full;
-					f.o(11)         <= tx_fifo_empty;
-					f.o(12)         <= tx_fifo_full;
+					f.r_o(7 downto 0) <= rx_fifo_data;
+					f.r_o(8)          <= rx_fifo_empty;
+					f.r_o(9)          <= rx_fifo_full;
+					f.r_o(11)         <= tx_fifo_empty;
+					f.r_o(12)         <= tx_fifo_full;
 				when "010" =>
 				when "011" =>
 				when "100" =>
@@ -173,7 +173,7 @@ begin
 				when "111" =>
 				when others =>
 				end case;
-				-- f.o(8)        <= rx after g.delay;
+				-- f.r_o(8)        <= rx after g.delay;
 			end if;
 		end if;
 
@@ -182,8 +182,8 @@ begin
 				dwe <= '1' after g.delay;
 			else
 				case io_addr is
-				when "000" => f.ld <= c.i(c.ld'range) after g.delay;
-				when "001" => tx_fifo_we <= c.i(13) after g.delay; rx_fifo_re <= c.i(10) after g.delay;
+				when "000" => f.r_ld <= c.r_i(c.r_ld'range) after g.delay;
+				when "001" => tx_fifo_we <= c.r_i(13) after g.delay; rx_fifo_re <= c.r_i(10) after g.delay;
 				when "010" => clock_reg_tx_we <= '1' after g.delay;
 				when "011" => clock_reg_rx_we <= '1' after g.delay;
 				when "100" => control_reg_we <= '1' after g.delay;

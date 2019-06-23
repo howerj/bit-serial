@@ -36,11 +36,11 @@ entity bcpu is
 end;
 
 architecture rtl of bcpu is
-	type state_t is (RESET, FETCH, EXECUTE, STORE, LOAD, ADVANCE, HALT);
+	type state_t is (RESET, FETCH, INDIRECT, OPERAND, EXECUTE, STORE, LOAD, ADVANCE, HALT);
 	type cmd_t is (
-		iOR,     iAND,    iXOR,     iADD, 
-		iROTL,   iROTR,   iIN,      iOUT,
-		iLOAD,   iSTORE,  iLITERAL, iFLAGS, 
+		iOR,     iAND,    iXOR,     iADD,
+		iLSHIFT, iRSHIFT, iLOAD,    iSTORE,
+		iIN,     iOUT,    iLITERAL, iFLAGS,
 		iJUMP,   iJUMPZ,  iJUMPI,   iPC
 	);
 	constant Cy:     integer :=  0; -- Carry; set by addition
@@ -49,7 +49,7 @@ architecture rtl of bcpu is
 	constant PAR:    integer :=  3; -- Parity of accumulator
 	constant ROT:    integer :=  4; -- Use rotate instead of shift
 	constant R:      integer :=  5; -- Reset CPU
-	constant UN:     integer :=  6; -- Unused flag
+	constant IND:    integer :=  6; -- Indirect
 	constant HLT:    integer :=  7; -- Halt CPU
 
 	type registers_t is record
@@ -227,8 +227,31 @@ begin
 				f.choice <= HALT after delay;
 			elsif c.flags(R) = '1' then
 				f.choice <= RESET after delay;
+			elsif c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0' then
+				f.choice <= INDIRECT after delay;
 			else
 				f.choice <= EXECUTE after delay;
+			end if;
+		when INDIRECT =>
+			f.choice <= EXECUTE after delay;
+			if c.first then
+				-- Carry and Borrow flags should be cleared manually.
+				f.dline(0)  <= '1'   after delay;
+				f.first     <= false after delay;
+			else
+				ae       <=     '1' after delay;
+				a        <= c.op(0) after delay;
+				f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
+				f.choice <= OPERAND after delay;
+			end if;
+		when OPERAND =>
+			f.choice <= EXECUTE after delay;
+			if c.first then
+				f.dline(0) <= '1'   after delay;
+				f.first    <= false after delay;
+			else
+				ie    <= '1' after delay;
+				f.op  <= i & c.op(c.op'high downto 1) after delay;
 			end if;
 		when EXECUTE =>
 			f.choice     <= ADVANCE after delay;
@@ -258,22 +281,34 @@ begin
 					acin  <= c.flags(Cy) after delay;
 					f.acc(f.acc'high) <= ares after delay;
 					f.flags(Cy) <= acout after delay;
-				when iROTL   =>
+				when iLSHIFT =>
 					if c.op(0) = '1' then
-						-- f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
-						-- if c.flags(ROT) = '1' then
+						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
+						if c.flags(ROT) = '1' then
 							f.acc  <= c.acc(c.acc'high - 1 downto 0) & c.acc(0) after delay;
-						-- end if;
+						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
-				when iROTR   =>
+				when iRSHIFT =>
 					if c.op(0) = '1' then
-						-- f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
-						-- if c.flags(ROT) = '1' then
+						f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
+						if c.flags(ROT) = '1' then
 							f.acc  <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-						-- end if;
+						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
+
+				when iLOAD =>
+					ae       <=     '1' after delay;
+					a        <= c.op(0) after delay;
+					f.op     <= c.op(0) & c.op(c.op'high downto 1) after delay;
+					f.choice <= LOAD after delay;
+				when iSTORE =>
+					ae       <=     '1' after delay;
+					a        <= c.op(0) after delay;
+					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
+					f.choice <= STORE after delay;
+
 				when iIN =>
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
@@ -292,16 +327,6 @@ begin
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
 
-				when iLOAD =>
-					ae     <=     '1' after delay;
-					a      <= c.op(0) after delay;
-					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
-					f.choice <= LOAD after delay;
-				when iSTORE =>
-					ae     <=     '1' after delay;
-					a      <= c.op(0) after delay;
-					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
-					f.choice <= STORE after delay;
 				when iLITERAL =>
 					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
 					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;

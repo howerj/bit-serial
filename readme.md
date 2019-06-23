@@ -131,34 +131,38 @@ The instruction set is as follows, opcode is the top four bits of every
 instruction, the rest is used as a 12-bit immediate value which could be used
 as a value or an address.
 
-| Instruction | Registers / Flags Effected               | Description                       |
-| ----------- | ---------------------------------------- | --------------------------------- |
-|   or        | acc = acc OR op                          | OR  with 12-bit immediate value   |
-|   and       | acc = acc AND (op OR $F000)              | AND with 12-bit immediate value   |
-|   xor       | acc = acc XOR op                         | XOR with 12-bit immediate value   |
-|   add       | acc = acc + op + carry                   | Add with 12-bit immediate value,  |
-|             | carry = set/clr                          | Carry added in and set.           |
-|   lshift    | if alternate flag set:                   | Left rotate *OR* Left Shift by    |
-|             | acc = rotl(acc, bitcount(op)             | bit-count of 12-bit operand.      |
-|             | else                                     | Rotate/Shift selected by CPU flag |
-|             | acc = acc &lt;&lt; bitcount(op)          |                                   |
-|   rshift    | if alternate flag set:                   | Right rotate *OR* Right Shift by  |
-|             | acc = rotr(acc, bitcount(op)             | bit-count of 12-bit operand.      |
-|             | else                                     | Rotate/Shift selected by CPU flag |
-|             | acc = acc &gt;&gt; bitcount(op)          |                                   |
-|   in        | acc = io(op)                             | Load memory location              |
-|   out       | io(op) = acc                             | Store to memory location          |
-|   load      | acc = memory(op)                         | Load memory location              |
-|   store     | memory(op) = acc                         | Store to memory location          |
-|   literal   | acc = op                                 | Load literal                      |
-|   flags     | acc = flags, flags=(~op&acc)|(op&flags)  | Exchange flags with accumulator   |
-|   jump      | pc = op                                  | Unconditional Jump to 12-bit      |
-|             |                                          | Address                           |
-|   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |
-|             | pc = op                                  | Counter to 12-bit address only if |
-|             |                                          | accumulator is non-zero           |
-|   jumpi     | pc = acc                                 | 'op' unused, Jump Through Accum.  |
-|   pc        | acc = pc                                 | 'op' unused, Get Program Counter  |
+| Instruction | Registers / Flags Effected               | Description                       | Affected by INDIRECT Flag |
+| ----------- | ---------------------------------------- | --------------------------------- | ------------------------- |
+|   or        | acc = acc OR op                          | OR  with 12-bit immediate value   | Yes                       |
+|   and       | acc = acc AND (op OR $F000)              | AND with 12-bit immediate value   | Yes                       |
+|   xor       | acc = acc XOR op                         | XOR with 12-bit immediate value   | Yes                       |
+|   add       | acc = acc + op + carry                   | Add with 12-bit immediate value,  | Yes                       |
+|             | carry = set/clr                          | Carry added in and set.           |                           |
+|   lshift    | if alternate flag set:                   | Left rotate *OR* Left Shift by    | Yes                       |
+|             | acc = rotl(acc, bitcount(op)             | bit-count of 12-bit operand.      |                           |
+|             | else                                     | Rotate/Shift selected by CPU flag |                           |
+|             | acc = acc &lt;&lt; bitcount(op)          |                                   |                           |
+|   rshift    | if alternate flag set:                   | Right rotate *OR* Right Shift by  | Yes                       |
+|             | acc = rotr(acc, bitcount(op)             | bit-count of 12-bit operand.      |                           |
+|             | else                                     | Rotate/Shift selected by CPU flag |                           |
+|             | acc = acc &gt;&gt; bitcount(op)          |                                   |                           |
+|   load      | acc = memory(op)                         | Load memory location              | Yes                       |
+|   store     | memory(op) = acc                         | Store to memory location          | Yes                       |
+|   in        | acc = io(op)                             | Load input memory location        |                           |
+|   out       | io(op) = acc                             | Store to output memory location   |                           |
+|   literal   | acc = op                                 | Load literal                      |                           |
+|   flags     | acc = flags, flags=(~op&acc)|(op&flags)  | Exchange flags with accumulator   |                           |
+|   jump      | pc = op                                  | Unconditional Jump to 12-bit      |                           |
+|             |                                          | Address                           |                           |
+|   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |                           |
+|             | pc = op                                  | Counter to 12-bit address only if |                           |
+|             |                                          | accumulator is non-zero           |                           |
+|   jumpi     | pc = acc                                 | 'op' unused, Jump Through Accum.  |                           |
+|   pc        | acc = pc                                 | 'op' unused, Get Program Counter  |                           |
+
+If the command is affected by the INDIRECT flag then when the bit is set the
+processor loads the value stored in the location specified by the operand
+instead of using the operand directly.
 
 The flags register contains the following flags:
 
@@ -170,9 +174,9 @@ The flags register contains the following flags:
 |    3     | Parity      | Parity of accumulator          |
 |    4     | Alternate   | Activate alternate instruction |
 |    5     | Reset       | Set to reset the CPU           |
-|    6     | Reserved    |                                |
+|    6     | Indirect    | Load operation location        |
 |    7     | Halt        | Set to halt the CPU            |
-|   7-15   | Reserved    |                                |
+|   8-15   | Reserved    |                                |
 
 The zero, parity and negative flags are updated before each instruction is
 executed and depend only on the contents on the accumulator. They are updated
@@ -236,13 +240,15 @@ Directives:
 |                        | current location.                         |
 | $                      | Write number as a literal into memory at  |
 |                        | current location.                         |
-| variable i             | Allocate space for a variable and give    |
+| .variable i            | Allocate space for a variable and give    |
 |                        | it a name                                 |
-| allocate $             | Allocate space                            |
-| set $i $i              | Set label or location to value            |
-| label i                | Create label at current location          |
-| instruction            | Compile instruction                       |
-| instruction $i         | Compile instruction with operand          |
+| .allocate $            | Allocate space                            |
+| .set $i $i             | Set label or location to value            |
+| .label i               | Create label at current location          |
+| .instruction           | Compile instruction                       |
+| .instruction $i        | Compile instruction with operand          |
+| .macro i               | Begin a macro definition                  |
+| .end                   | End a macro definition                    |
 | #                      | Comment until end of line                 |
 | ;                      | Comment until end of line                 |
 
@@ -250,14 +256,9 @@ The arguments given to the directives in the above table can either be
 hexadecimal numbers (such as '$123' or $a12'). This is shown with a '$' sign.
 Or they can be a label or a variable, which is shown with a 'i' sign.
 
-There are a few pseudo instructions:
-
-* 'nop', which is 'or $0'
-* 'clr', which is 'literal $0'
-
 The instruction field may be one of the following; "or", "and", "xor", "invert",
-"add", "sub", "lshift", "rshift", "load", "store", "literal", "flags", "jump", 
-"jumpz", "14?", "15?". "14?" and "15?" correspond to the unused instructions.
+"add", lshift", "rshift", "load", "store", "literal", "flags", "jump", 
+"jumpz", "in", "out", ""jumpi", "pc".
 
 To assemble a file with the toolchain:
 
@@ -267,48 +268,13 @@ To run the simulator on a built hex file:
 
 	./bit -r bit.hex
 
-An example program:
-
-	; set I/O register $0 to $55, then increment a variable
-	; 'count' that starts at '$3' until it exceeds '$F'. Then
-	; Halt the CPU.
-
-		variable count
-	set count $3
-		flags $0800 ; set address bit
-		literal $55 ; load value to store
-		store $0    ; store in I/O register
-		flags $0    ; reset address bit
-	label start
-		flags $2    ; borrow flag needs to be set to perform subtraction correctly.
-		load  count ; load the counter variable
-		add   $1    ; add 1 to count
-		and   $F    ; % 15
-		store count ; save result
-		flags $0    ; get flags
-		and   $4    ; mask off carry flag
-		jumpz start ; jump back to start if non-zero
-
-	label end
-		flags $80 ; halt
-	 
-
 # To-Do
 
 This is more of a nice-to-have list, and a list of ideas.
 
-* Implement Memory mapped I/O in VHDL and in simulator
-  - Add an I/O line, or allow the top four bits of the address to be set to
-  a default value (use more flag bits?).
-  - Add a timer
-  - Implement a software only 9600 baud UART driver
-  - Add input for switches
-  - Add a bit-serial multiplier to the project, this could be made to
-  be configurable so that it uses different types of multiplication
-  depending on a generic parameter. The interface would need to be the
-  same under all circumstances, so the package to select different
-  multiplication types could have modules that provide those different
-  interfaces.
+* Improve and update documentation, which is now out of date given all
+of the changes to the project. There are bound to be inconsistencies
+and other problems.
 * Port a simple, very cut down, Forth
 * A good project to use this CPU for would be to reimplement the VT100 terminal
   emulator used in <https://github.com/howerj/forth-cpu>. I could perhaps

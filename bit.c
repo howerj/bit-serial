@@ -175,19 +175,19 @@ static int assemble(bcpu_t *b, FILE *input) {
 			}
 			const int inst = instruction(command);
 			if (inst < 0) {
-				if (!strcmp(command, "allocate")) {
+				if (!strcmp(command, ".allocate")) {
 					if (!arg1num) {
 						error("invalid allocate: %s", arg1);
 						goto fail;
 					}
 					data -= op1;
-				} else if (!strcmp(command, "variable")) {
+				} else if (!strcmp(command, ".variable")) {
 					const int added = reference(vs, MAX_VARS, arg1, TYPE_VAR, data--, 1);
 					if (added < 0) {
 						error("variable? %d/%s", added, arg1);
 						goto fail;
 					}
-				} else if (!strcmp(command, "label")) {
+				} else if (!strcmp(command, ".label")) {
 					const int added = reference(vs, MAX_VARS, arg1, TYPE_LABEL, used, 1);
 					if (added < 0) {
 						error("label? %d/%s", added, arg1);
@@ -215,7 +215,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 				b->m[used++] = (((mw_t)inst) << 12) | op1;
 			}
 		} else if (args == 3) {
-			if (!strcmp(command, "set")) {
+			if (!strcmp(command, ".set")) {
 				if (!arg1num) {
 					var_t *v = lookup(vs, MAX_VARS, arg1);
 					if (!v) {
@@ -239,7 +239,7 @@ static int assemble(bcpu_t *b, FILE *input) {
 				}
 				assert(op1 < MSIZE);
 				b->m[op1] = op2;
-			} else if (!strcmp(command, "constant")) {
+			} else if (!strcmp(command, ".constant")) {
 				if (!arg2num) { /* TODO: evaluate simple expressions */
 					error("not a number: %s", arg2);
 					goto fail;

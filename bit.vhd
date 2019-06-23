@@ -39,7 +39,7 @@ architecture rtl of bcpu is
 	type state_t is (RESET, FETCH, EXECUTE, STORE, LOAD, ADVANCE, HALT);
 	type cmd_t is (
 		iOR,     iAND,    iXOR,     iADD, 
-		iLSHIFT, iRSHIFT, iIN,      iOUT,
+		iROTL,   iROTR,   iIN,      iOUT,
 		iLOAD,   iSTORE,  iLITERAL, iFLAGS, 
 		iJUMP,   iJUMPZ,  iJUMPI,   iPC
 	);
@@ -258,20 +258,20 @@ begin
 					acin  <= c.flags(Cy) after delay;
 					f.acc(f.acc'high) <= ares after delay;
 					f.flags(Cy) <= acout after delay;
-				when iLSHIFT =>
+				when iROTL   =>
 					if c.op(0) = '1' then
-						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
-						if c.flags(ROT) = '1' then
+						-- f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
+						-- if c.flags(ROT) = '1' then
 							f.acc  <= c.acc(c.acc'high - 1 downto 0) & c.acc(0) after delay;
-						end if;
+						-- end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
-				when iRSHIFT =>
+				when iROTR   =>
 					if c.op(0) = '1' then
-						f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
-						if c.flags(ROT) = '1' then
+						-- f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
+						-- if c.flags(ROT) = '1' then
 							f.acc  <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-						end if;
+						-- end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 				when iIN =>

@@ -2,7 +2,13 @@
  * LICENSE: MIT
  * AUTHOR:  Richard James Howe
  * EMAIL:   howe.r.j.89@gmail.com
- * GIT:     https://github.com/howerj/bit-serial */
+ * GIT:     https://github.com/howerj/bit-serial
+ *
+ * TODO: Macro arguments
+ * TODO: Add include directive
+ * TODO: Reorder instructions in both 'bit.vhd' and here
+ * TODO: Fix 'AND' instruction in here and in the VHDL when indirect on
+ * TODO: Update documentation and diagrams to reflect changes */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -30,8 +36,8 @@ enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 static const char *commands[] = { 
 	"or",     "and",    "xor",     "add",  
 	"lshift", "rshift", "load",    "store",
-	"in",     "out",    "literal", "flags",
-	"jump",   "jumpz",  "jumpi",   "pc",
+	"in",     "out",    "literal", "11?",
+	"jump",   "jumpz",  "set",     "get",
 };
 
 static int instruction(const char *c) {
@@ -416,14 +422,6 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	return r;
 }
 
-/*static inline mw_t sub(mw_t a, mw_t b, mw_t *under) {
-	assert(under);
-	const mw_t r = a - b;
-	*under &= ~2u;
-	*under |= b > a;
-	return r;
-}*/
-
 static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr) {
 	assert(b);
 	assert(io);
@@ -468,7 +466,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 	assert(b);
 	assert(io);
 	int r = 0;
-	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg, t = 0;
+	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
 	const unsigned forever = cycles == 0;
        	unsigned count = 0;
 	for (; count < cycles || forever; count++) {
@@ -493,25 +491,25 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		const mw_t lop = !(cmd & 0x8) && (flg & (1u << fIND)) ? bload(b, io, 0, op1) : op1; 
 		pc++;
 		switch (cmd) {
-		case 0x0: acc |= lop;                        break; /* OR      */
-		case 0x1: acc &= (0xF000 | lop);             break; /* AND     */
-		case 0x2: acc ^= lop;                        break; /* XOR     */
-		case 0x3: acc = add(acc, lop, &flg);         break; /* ADD     */
+		case 0x0: acc |= lop;                            break; /* OR      */
+		case 0x1: acc &= (0xF000 | lop); /* FIX THIS! */ break; /* AND     */
+		case 0x2: acc ^= lop;                            break; /* XOR     */
+		case 0x3: acc = add(acc, lop, &flg);             break; /* ADD     */
 
-		case 0x4: acc = shiftl(rot, acc, bits(lop)); break; /* LSHIFT  */
-		case 0x5: acc = shiftr(rot, acc, bits(lop)); break; /* RSHIFT  */
-		case 0x6: acc = bload(b, io, 0, lop);        break; /* LOAD    */
-		case 0x7: bstore(b, io, 0, lop, acc);        break; /* STORE   */
+		case 0x4: acc = shiftl(rot, acc, bits(lop));     break; /* LSHIFT  */
+		case 0x5: acc = shiftr(rot, acc, bits(lop));     break; /* RSHIFT  */
+		case 0x6: acc = bload(b, io, 0, lop);            break; /* LOAD    */
+		case 0x7: bstore(b, io, 0, lop, acc);            break; /* STORE   */
 
-		case 0x8: acc = bload(b, io, 1, op1);        break; /* IN      */
-		case 0x9: bstore(b, io, 1, op1, acc);        break; /* OUT     */
-		case 0xA: acc = op1;                         break; /* LITERAL */
-		case 0xB: t = flg; flg= (~op1 & acc) | (op1 & flg); acc = t; break; /* FLAGS   */
+		case 0x8: acc = bload(b, io, 1, op1);            break; /* IN      */
+		case 0x9: bstore(b, io, 1, op1, acc);            break; /* OUT     */
+		case 0xA: acc = op1;                             break; /* LITERAL */
+		case 0xB:                                        break; /* RESERVED */
 
-		case 0xC: pc = op1;                          break; /* JUMP    */
-		case 0xD: if (!acc) pc = op1;                break; /* JUMPZ   */
-		case 0xE: pc = acc;                          break; /* JUMPI   */
-		case 0xF: acc = pc;                          break; /* PC      */
+		case 0xC: pc = op1;                              break; /* JUMP    */
+		case 0xD: if (!acc) pc = op1;                    break; /* JUMPZ   */
+		case 0xE: if (op1 & 1) flg = acc; else pc = acc; break; /* SET */
+		case 0xF: if (op1 & 1) acc = flg; else acc = pc; break; /* GET */
 
 		default: r = -1; goto halt;
 		}

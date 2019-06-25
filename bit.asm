@@ -19,6 +19,7 @@
 .constant fInd $40
 .constant fHlt $80
 
+; variables start from the end of memory and go down
 .variable irq
 .variable allset
 .variable r0
@@ -30,15 +31,24 @@
 
 .set allset $FFFF
 
+.macro flags
+	set $1
+.end
+
+.macro flags?
+	get $1
+.end
+
 .macro halt
 	literal fHlt
-	flags $7F
+	flags
 .end
 
 .macro invert ; indirect flag must be on
 	xor allset
 .end
 
+; works if indirect is set or not if address zero is zero
 .macro nop
 	or $0
 .end
@@ -47,6 +57,7 @@
 	literal $0
 .end
 
+; works if indirect is set or not if address one is one
 .macro inc
 	add $1
 .end
@@ -55,8 +66,7 @@
 	$0           ; all zeros, must be first instruction for 'nop'
 	$1           ; '1', must be second instruction for 'inc' to work
 	clr          ; clear accumulator
-	flags $0     ; clear all flags
-	clr          ; discard accumulator
+	flags        ; clear all flags
 
 	literal $2   ; load 2
 	lshift $0FFF ; shift this to high bits
@@ -70,18 +80,10 @@
 	add   $1    ; add 1 to count
 	and   $F    ; % 15
 	store count ; save result
-	flags $FFF  ; get flags
+	flags?
 	and   fZ    ; mask off zero flag
 	jumpz start ; jump back to start if non-zero
 
 .label end
 	halt
  
-.label call
-	; TODO
-	; - Increment SP
-	; - Store SP back
-	; - Store PC
-	jumpi
-
-

@@ -40,8 +40,8 @@ architecture rtl of bcpu is
 	type cmd_t is (
 		iOR,     iAND,    iXOR,     iADD,
 		iLSHIFT, iRSHIFT, iLOAD,    iSTORE,
-		iIN,     iOUT,    iLITERAL, iFLAGS,
-		iJUMP,   iJUMPZ,  iJUMPI,   iPC
+		iIN,     iOUT,    iLITERAL, i11,
+		iJUMP,   iJUMPZ,  iSET,     iGET
 	);
 	constant Cy:     integer :=  0; -- Carry; set by addition
 	constant Z:      integer :=  1; -- Accumulator is zero
@@ -266,6 +266,9 @@ begin
 					f.acc <= (c.op(0) or c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iAND =>
 					f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+					-- TODO: Fix this when operand was loaded indirectly, this
+					-- can be done with a flag set in the OPERAND and cleared
+					-- after EXECUTE
 					if not c.last4 then
 						f.op  <= "0" & c.op (c.op'high downto 1) after delay;
 						f.acc <= (c.op(0) and c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
@@ -330,11 +333,7 @@ begin
 				when iLITERAL =>
 					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
 					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
-				when iFLAGS =>
-					f.acc   <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
-					f.flags <= (((not c.op(0)) and c.acc(0)) or (c.op(0) and c.flags(0))) & 
-						   c.flags(c.flags'high downto 1) after delay;
-					f.op    <=        "0" & c.op(c.op'high downto 1) after delay;
+				when i11 =>
 
 				when iJUMP =>
 					ae       <=     '1' after delay;
@@ -350,13 +349,22 @@ begin
 						f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
 						f.choice <= FETCH after delay;
 					end if;
-				when iJUMPI =>
-					f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
+				when iSET =>
+					if c.op(0) = '0' then
+						f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
+						f.choice <= FETCH after delay;
+					else
+						f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
+					end if;
 					f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-					f.choice <= FETCH after delay;
-				when iPC =>
-					f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
-					f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1) after delay;
+				when iGET =>
+					if c.op(0) = '0' then
+						f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
+						f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1) after delay;
+					else
+						f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
+						f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
+					end if;
 				end case;
 			end if;
 

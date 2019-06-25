@@ -71,6 +71,45 @@ This turns this 'readme.md' file into a HTML file.
 
 Cleans up the project.
 
+# Use Case
+
+Often in an [FPGA][] design there is spare Dual Port Block RAM (BRAM) available,
+either because only part of the BRAM module is being used or because it is not
+needed entirely. Adding a new CPU however is a bigger decision than using spare
+BRAM capacity, it can take up quite a lot of floor space, and perhaps other
+precious resources. If this is the case then adding this CPU costs practically
+nothing in terms of floor space, the main cost will be in development time.
+
+In short, the project may be useful if:
+
+* Space is at a premium in your design.
+* You have spare memory for the program and storage.
+* You need a programmable CPU that supports a reasonable instruction set.
+* *Execution speed is not a concern*.
+
+# Other Soft Microprocessors
+
+This is a *very* specialized core, that cannot be emphasized enough. It
+executes slowly, but is small. Other, larger core (but still relatively small)
+may be useful for your needs. In terms of engineering trade offs this design
+takes things to the extreme in one direction only.
+
+The core should be written to be portable to different [FPGA][]s, however the
+author only tests what they have available (Xilinx, Spartan-6).
+
+## The H2
+
+Another small core, based on the J1. This core executes quite quickly and uses
+few resources, although much more than this core. The instruction set is quite
+dense and allows for higher level programming than just using straight
+assembler.
+
+* <https://github.com/howerj/forth-cpu>
+
+## Other cores
+
+* <https://en.wikipedia.org/wiki/Soft_microprocessor>
+
 # CPU Specification
 
 A quick overview of the features *bcpu*:
@@ -82,9 +121,8 @@ memory mapped input/output.
 * An accumulator design
 * As it is a [bit-serial CPU][] it processes data a bit at a time, the
 processor stays in each state for 16 clock cycles. A single instruction is
-fetched and executed in 51-68 ((16 + 1)\*3 to (16 + 1) \* 4) clock cycles.
-* Has add-with-carry, subtract with borrow flag, rotate and shift left/right 
-instructions.
+fetched and executed in 51-68 ((16 + 1)\*3 to (16 + 1) \* 5) clock cycles.
+* Has add-with-carry, rotate and shift left/right instructions.
 * Lacks any kind of call stack, or registers.
 * Has very little CPU state; 5 x 16 bit registers, a 4-bit register, 2 x 3-bit
   register, and 2 x 1-bit register.
@@ -99,7 +137,7 @@ of the document and the toolchain assume the width has been set to 16.
 There is a single state-machine which forms the heart of the CPU, it has seven
 states; 'reset', 'fetch', 'execute', 'store', 'load', 'advance' and 'halt'.
 
-![](bcpu-0.svg)
+<!-- ![](bcpu-0.svg) -->
 
 Not shown in this diagram is the fact that all states can go back to the
 'reset' state when an external reset signal is given, this reset can be
@@ -151,14 +189,14 @@ as a value or an address.
 |   in        | acc = io(op)                             | Load input memory location        |                           |
 |   out       | io(op) = acc                             | Store to output memory location   |                           |
 |   literal   | acc = op                                 | Load literal                      |                           |
-|   flags     | acc = flags, flags=(~op&acc)|(op&flags)  | Exchange flags with accumulator   |                           |
+|   Reserved  |                                          |                                   |                           |
 |   jump      | pc = op                                  | Unconditional Jump to 12-bit      |                           |
 |             |                                          | Address                           |                           |
 |   jumpz     | if zero flag not set then:               | Conditional Jump, set Program     |                           |
 |             | pc = op                                  | Counter to 12-bit address only if |                           |
 |             |                                          | accumulator is non-zero           |                           |
-|   jumpi     | pc = acc                                 | 'op' unused, Jump Through Accum.  |                           |
-|   pc        | acc = pc                                 | 'op' unused, Get Program Counter  |                           |
+|   set       | if (op & 1) flags = acc else pc = acc    | Set a register directly           |                           |
+|   get       | if (op & 1) acc = flags else acc = pc    | Get contents of a register        |                           |
 
 If the command is affected by the INDIRECT flag then when the bit is set the
 processor loads the value stored in the location specified by the operand
@@ -189,10 +227,10 @@ instruction has been executed.
 The Halt flag takes precedence over the Reset flag. The reset instruction
 clears all of the flags, then recalculates the parity, zero and negative flags.
 
-To connect the CPU up to the rest of the system you will need to understand the
+<!-- To connect the CPU up to the rest of the system you will need to understand the
 signal timing for all of the *bcpu* input and output signals:
 
-![BCPU Timing](bcpu-1.png)
+![BCPU Timing](bcpu-1.png) 
 
 Some notes on the timing diagram, the 'cycle' field is for illustrative
 purposes only. The text in the 'cycle' field has the following meaning:
@@ -203,6 +241,7 @@ purposes only. The text in the 'cycle' field has the following meaning:
 * 0-15: The rest of the bits to be processed for the current execution state.
 * next: The first bit of the next execution state.
 * rest: The rest of the bits of the next execution states.
+-->
 
 Other useful information:
 
@@ -463,6 +502,7 @@ That's all folks!
 [bit.asm]: bit.asm
 [Digilent]: https://store.digilentinc.com/
 [r8086.zip]: r8086.zip
+[C]: https://en.wikipedia.org/wiki/C_%28programming_language%29
 
 <style type="text/css">
 	body{

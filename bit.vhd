@@ -40,7 +40,7 @@ architecture rtl of bcpu is
 	type cmd_t is (
 		iOR,     iAND,    iXOR,     iADD,
 		iLSHIFT, iRSHIFT, iLOAD,    iSTORE,
-		iIN,     iOUT,    iLITERAL, i11,
+		iIN,     iOUT,    iLITERAL, iSTOREC,
 		iJUMP,   iJUMPZ,  iSET,     iGET
 	);
 	constant Cy:     integer :=  0; -- Carry; set by addition
@@ -333,7 +333,11 @@ begin
 				when iLITERAL =>
 					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
 					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
-				when i11 =>
+				when iSTOREC =>
+					ae       <=     '1' after delay;
+					a        <= c.op(0) after delay;
+					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
+					f.choice <= STORE after delay;
 
 				when iJUMP =>
 					ae       <=     '1' after delay;

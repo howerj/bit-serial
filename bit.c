@@ -36,7 +36,7 @@ enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 static const char *commands[] = { 
 	"or",     "and",    "xor",     "add",  
 	"lshift", "rshift", "load",    "store",
-	"in",     "out",    "literal", "11?",
+	"in",     "out",    "literal", "store-c",
 	"jump",   "jumpz",  "set",     "get",
 };
 
@@ -504,7 +504,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		case 0x8: acc = bload(b, io, 1, op1);            break; /* IN      */
 		case 0x9: bstore(b, io, 1, op1, acc);            break; /* OUT     */
 		case 0xA: acc = op1;                             break; /* LITERAL */
-		case 0xB:                                        break; /* RESERVED */
+		case 0xB: bstore(b, io, 0, op1, acc);            break; /* STORE-C  */
 
 		case 0xC: pc = op1;                              break; /* JUMP    */
 		case 0xD: if (!acc) pc = op1;                    break; /* JUMPZ   */

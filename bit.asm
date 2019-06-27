@@ -26,6 +26,7 @@
 .variable r1
 .variable r2
 .variable r3
+.variable saved-flags
 .variable sp
 .variable rp
 
@@ -44,8 +45,16 @@
 	flags
 .end
 
-.macro invert ; indirect flag must be on
+.macro invert
+	store r0
+	flags?
+	store saved-flags
+	literal fInd
+	flags
+	load r0
 	xor allset
+	load saved-flags
+	flags
 .end
 
 ; works if indirect is set or not if address zero is zero

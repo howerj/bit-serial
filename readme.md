@@ -137,7 +137,7 @@ of the document and the toolchain assume the width has been set to 16.
 There is a single state-machine which forms the heart of the CPU, it has seven
 states; 'reset', 'fetch', 'execute', 'store', 'load', 'advance' and 'halt'.
 
-<!-- ![](bcpu-0.svg) -->
+![](bcpu-0.svg)
 
 Not shown in this diagram is the fact that all states can go back to the
 'reset' state when an external reset signal is given, this reset can be
@@ -172,7 +172,7 @@ as a value or an address.
 | Instruction | Registers / Flags Effected               | Description                       | Affected by INDIRECT Flag |
 | ----------- | ---------------------------------------- | --------------------------------- | ------------------------- |
 |   or        | acc = acc OR op                          | OR  with 12-bit immediate value   | Yes                       |
-|   and       | acc = acc AND (op OR $F000)              | AND with 12-bit immediate value   | Yes                       |
+|   and       | acc = acc AND (op OR $F000) \*           | AND with 12-bit immediate value   | Yes                       |
 |   xor       | acc = acc XOR op                         | XOR with 12-bit immediate value   | Yes                       |
 |   add       | acc = acc + op + carry                   | Add with 12-bit immediate value,  | Yes                       |
 |             | carry = set/clr                          | Carry added in and set.           |                           |
@@ -200,7 +200,9 @@ as a value or an address.
 
 If the command is affected by the INDIRECT flag then when the bit is set the
 processor loads the value stored in the location specified by the operand
-instead of using the operand directly.
+instead of using the operand directly. Also of note, if the indirect flag is
+on then the 'AND' instruction does not 'OR' '$F000' with the operand before
+the 'AND', it just uses the value loaded out of memory.
 
 The flags register contains the following flags:
 
@@ -227,7 +229,7 @@ instruction has been executed.
 The Halt flag takes precedence over the Reset flag. The reset instruction
 clears all of the flags, then recalculates the parity, zero and negative flags.
 
-<!-- To connect the CPU up to the rest of the system you will need to understand the
+To connect the CPU up to the rest of the system you will need to understand the
 signal timing for all of the *bcpu* input and output signals:
 
 ![BCPU Timing](bcpu-1.png) 
@@ -241,7 +243,6 @@ purposes only. The text in the 'cycle' field has the following meaning:
 * 0-15: The rest of the bits to be processed for the current execution state.
 * next: The first bit of the next execution state.
 * rest: The rest of the bits of the next execution states.
--->
 
 Other useful information:
 
@@ -288,6 +289,7 @@ Directives:
 | .instruction $i        | Compile instruction with operand          |
 | .macro i               | Begin a macro definition                  |
 | .end                   | End a macro definition                    |
+| .include i             | Include a file                            |
 | #                      | Comment until end of line                 |
 | ;                      | Comment until end of line                 |
 
@@ -314,7 +316,6 @@ This is more of a nice-to-have list, and a list of ideas.
 * Improve and update documentation, which is now out of date given all
 of the changes to the project. There are bound to be inconsistencies
 and other problems.
-* Port a simple, very cut down, Forth
 * A good project to use this CPU for would be to reimplement the VT100 terminal
   emulator used in <https://github.com/howerj/forth-cpu>. I could perhaps
   reimplement the core, which came from <http://www.javiervalcarce.eu/html/vhdl-vga80x40-en.html>.
@@ -332,8 +333,6 @@ and other problems.
   clock by 2^N.
 
 For the BCPU and its internals:
-* While it might slow down the CPU, using the operand field as an address to
-  fetch an argument from might be better.
 * Add an interrupt request line.
 * Add interrupt handling, which will require a way of saving
 the program counter somewhere. The easiest way of implementing this would
@@ -348,10 +347,6 @@ or at least do the PC+1 in parallel with EXECUTE.
 * Add assertions, model/specify behaviour
   - Assert output lines are correct for the appropriate states
   and instructions.
-* The 'iFLAGS' instruction could be improved; the operand
-and accumulator could be used to set the new value of the flag
-register whilst the accumulator is set to the flag register before
-modification.
 * A super minimal forth has been added (not mine) that targets the boot-sector
 for a DOS box. See [r8086.zip][]. This could be used as a template for a
 minimal Forth for this CPU, it would need to be larger as the instruction set
@@ -359,11 +354,36 @@ is more primitive and more would need to be implemented.
 
 
 For the assembler/simulator:
-- Read from a string not a file
 - Allow the inclusion of other files with an 'include' directive
-- Add primitive macro system
 - Make the assembler smaller by rewriting it
 - Rotate does not seem to work, this needs fixing
+
+# Project Goals
+
+* [x] Map out a viable instruction set
+* [x] Make a toolchain for the system
+  * [x] Make a primitive assembler
+    * [x] Assemble short programs
+    * [x] Add macros
+    * [ ] Add an 'include' directive
+    * [ ] Add a directive to compile counted strings
+    * [ ] Allow macros to have parameters
+    * [ ] Add conditional macros
+    * [ ] Allow simple expressions to be evaluated
+  * [x] Make a simulator for the system
+* [x] Implement the system on an FPGA
+  * [x] Implement the CPU
+  * [x] Implement a memory and peripheral interface
+  * [ ] Add an interrupt request mechanism
+  * [ ] Add a counter that can cause an interrupt to the core
+* [x] Create a tiny test program
+* [x] Verify program works in hardware
+* [ ] Implement a tiny Forth on the CPU
+* [ ] Use in other VHDL projects
+  * [ ] As a low speed UART (Bit-Banged)
+  * [ ] As a VT100 interface for a VGA Text Terminal
+* [ ] Keep the processor small
+* [ ] Make a bit-parallel version of the CPU
 
 # References / Appendix
 
@@ -373,9 +393,10 @@ edited immediately by copying the following text into [GraphvizOnline][].
 	digraph bcpu {
 		reset -> fetch [label="start"]
 		fetch -> execute
-		fetch -> operand [label="flag(IND) = '1' and op < 8"]
+		fetch -> indirect [label="flag(IND) = '1' and op < 8"]
 		fetch -> reset  [label="flag(RST) = '1'"]
 		fetch -> halt  [label="flag(HLT) = '1'"]
+		indirect -> operand 
 		operand -> execute
 		execute -> advance
 		execute -> store   [label="op = 'store'"]
@@ -414,7 +435,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},      
-	  {name: 'cmd',   wave: 'x2................xx', data: ['LOAD']},
+	  {name: 'cmd',   wave: 'x2................xx', data: ['OPERAND or LOAD']},
 	  {name: 'ie',    wave: 'x01...............0x'},
 	  {name: 'oe',    wave: 'x0.................x'},
 	  {name: 'ae',    wave: 'x0.................x'},
@@ -436,7 +457,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
-	  {name: 'cmd',   wave: 'x2................xx', data: ['EXECUTE: LOAD, STORE, JUMP, JUMPZ']},
+	  {name: 'cmd',   wave: 'x2................xx', data: ['INDIRECT or EXECUTE: LOAD, STORE, JUMP, JUMPZ']},
 	  {name: 'ie',    wave: 'x0.................x'},
 	  {name: 'oe',    wave: 'x0.................x'},
 	  {name: 'ae',    wave: 'x01...............0x'},
@@ -479,7 +500,6 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {},
 	  
 	]}
-
 
 
 That's all folks!

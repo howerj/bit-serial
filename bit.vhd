@@ -83,6 +83,7 @@ architecture rtl of bcpu is
 	signal cmd: cmd_t; -- Shows up nicely in traces as an enumerated value
 	signal add1, add2, acin, ares, acout: std_ulogic; -- shared adder signals
 	signal last4, last:                   std_ulogic; -- state sequence signals
+	signal indirection:                   boolean;    -- indirection on for those instruction it applies to
 
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
@@ -128,6 +129,7 @@ begin
 	cmd   <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 	last4 <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
 	last  <= c.dline(c.dline'high)     after delay;  -- processing last bit?
+	indirection <= c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0';
 
 	process (clk, rst)
 	begin
@@ -154,7 +156,7 @@ begin
 		end if;
 	end process;
 
-	process (i, c, cmd, ares, acout, last, last4)
+	process (i, c, cmd, ares, acout, last, last4, indirection)
 	begin
 		o    <= '0' after delay;
 		a    <= '0' after delay;
@@ -227,7 +229,7 @@ begin
 				f.choice <= HALT after delay;
 			elsif c.flags(R) = '1' then
 				f.choice <= RESET after delay;
-			elsif c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0' then
+			elsif indirection then
 				f.choice <= INDIRECT after delay;
 			else
 				f.choice <= EXECUTE after delay;
@@ -235,7 +237,6 @@ begin
 		when INDIRECT =>
 			f.choice <= EXECUTE after delay;
 			if c.first then
-				-- Carry and Borrow flags should be cleared manually.
 				f.dline(0)  <= '1'   after delay;
 				f.first     <= false after delay;
 			else
@@ -266,10 +267,7 @@ begin
 					f.acc <= (c.op(0) or c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iAND =>
 					f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-					-- TODO: Fix this when operand was loaded indirectly, this
-					-- can be done with a flag set in the OPERAND and cleared
-					-- after EXECUTE
-					if not c.last4 then
+					if (not c.last4) or indirection then
 						f.op  <= "0" & c.op (c.op'high downto 1) after delay;
 						f.acc <= (c.op(0) and c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 					end if;

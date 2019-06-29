@@ -45,6 +45,11 @@
 	flags
 .end
 
+.macro indirect
+	literal fInd
+	flags
+.end
+
 .macro invert
 	store r0
 	flags?

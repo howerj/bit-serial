@@ -5,10 +5,7 @@
  * GIT:     https://github.com/howerj/bit-serial
  *
  * TODO: Macro arguments
- * TODO: Add include directive
- * TODO: Reorder instructions in both 'bit.vhd' and here
- * TODO: Fix 'AND' instruction in here and in the VHDL when indirect on
- * TODO: Update documentation and diagrams to reflect changes */
+ * TODO: Reorder instructions in both 'bit.vhd' and here */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -280,6 +277,22 @@ static int assemble(bcpu_t *b, assembler_t *a, const char *input) { /* super laz
 						error("macro? %d/%s", mac, arg1);
 						goto fail;
 					}
+				} else if (!strcmp(command, ".include")) {
+					FILE *f = fopen(arg1, "rb");
+					if (!f) {
+						error("include? %s", arg1);
+						goto fail;
+					}
+					char *m = calloc(MAX_FILE, 1);
+					if (!m) {
+						fclose(f);
+						goto fail;
+					}
+					fread(m, 1, MAX_FILE - 1, f);
+					const int r = assemble(b, a, m);
+					fclose(f);
+					if (r < 0)
+						goto fail;
 				} else {
 					error("unknown command: %s", command);
 					goto fail;
@@ -488,11 +501,12 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
 		flg |= (!(bits(acc) & 1u)) << fPAR; /* set parity bit    */
 
-		const mw_t lop = !(cmd & 0x8) && (flg & (1u << fIND)) ? bload(b, io, 0, op1) : op1; 
+		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
+		const mw_t lop = loadit ? bload(b, io, 0, op1) : op1; 
 		pc++;
 		switch (cmd) {
 		case 0x0: acc |= lop;                            break; /* OR      */
-		case 0x1: acc &= (0xF000 | lop); /* FIX THIS! */ break; /* AND     */
+		case 0x1: acc &= ((loadit ? 0: 0xF000) | lop);   break; /* AND     */
 		case 0x2: acc ^= lop;                            break; /* XOR     */
 		case 0x3: acc = add(acc, lop, &flg);             break; /* ADD     */
 

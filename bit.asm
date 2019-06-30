@@ -50,18 +50,6 @@
 	flags
 .end
 
-.macro invert
-	store r0
-	flags?
-	store saved-flags
-	literal fInd
-	flags
-	load r0
-	xor allset
-	load saved-flags
-	flags
-.end
-
 ; works if indirect is set or not if address zero is zero
 .macro nop
 	or $0
@@ -93,7 +81,7 @@
 	load  count
 	add   $1    ; add 1 to count
 	and   $F    ; % 15
-	store count ; save result
+	store-c count ; save result
 	flags?
 	and   fZ    ; mask off zero flag
 	jumpz start ; jump back to start if non-zero

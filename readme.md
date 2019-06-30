@@ -290,6 +290,7 @@ Directives:
 | .macro i               | Begin a macro definition                  |
 | .end                   | End a macro definition                    |
 | .include i             | Include a file                            |
+| .address               |                                           |
 | #                      | Comment until end of line                 |
 | ;                      | Comment until end of line                 |
 

@@ -3,14 +3,6 @@
 -- Repository:  https://github.com/howerj/bit-serial
 -- License:     MIT
 -- Description: An N-bit, simple and small bit serial CPU
---
--- TODO: Add interrupts, some form of call/return, and
--- a built in timer with clock enable/interrupt generation
--- on comparison to a register.
--- TODO: It might be best to experiment with the instruction
--- set more, such as treating the operand as an address to load
--- instead of using it directly (which may require another state).
--- This could be selected for with a flag.
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -18,21 +10,18 @@ use std.textio.all; -- for debug only, not needed for synthesis
 
 entity bcpu is 
 	generic (
-		asynchronous_reset: boolean  := true; -- use asynchronous reset if true, synchronous if false
-		delay:              time     := 0 ns; -- simulation only, gate delay
-		N:                  positive := 16;
-	
-		parity:             std_ulogic := '0';   -- set parity (even/odd) of parity flag
-		jumpz:              std_ulogic := '1';   -- jump on zero = '1', jump on non-zero = '0'
-		debug:              boolean    := false  -- if true, debug statements will be printed
-	);
+		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false
+		delay:              time       := 0 ns;   -- simulation only, gate delay
+		N:                  positive   := 16;     -- size the CPU, minimum is 8
+		parity:             std_ulogic := '0';    -- set parity (even/odd) of parity flag
+		jumpz:              std_ulogic := '1';    -- jump on zero = '1', jump on non-zero = '0'
+		debug:              boolean    := false); -- if true, debug statements will be printed
 	port (
-		clk:         in std_ulogic;
-		rst:         in std_ulogic;
-		i:           in std_ulogic;
-		o, a:       out std_ulogic;
-   		oe, ie, ae: buffer std_ulogic;
-		stop:       out std_ulogic);
+		clk, rst:       in std_ulogic;
+		i:              in std_ulogic;
+		o, a:          out std_ulogic;
+		oe, ie, ae: buffer std_ulogic;
+		stop:          out std_ulogic);
 end;
 
 architecture rtl of bcpu is
@@ -41,16 +30,16 @@ architecture rtl of bcpu is
 		iOR,     iAND,    iXOR,     iADD,
 		iLSHIFT, iRSHIFT, iLOAD,    iSTORE,
 		iIN,     iOUT,    iLITERAL, iSTOREC,
-		iJUMP,   iJUMPZ,  iSET,     iGET
-	);
-	constant Cy:     integer :=  0; -- Carry; set by addition
-	constant Z:      integer :=  1; -- Accumulator is zero
-	constant Ng:     integer :=  2; -- Accumulator is negative
-	constant PAR:    integer :=  3; -- Parity of accumulator
-	constant ROT:    integer :=  4; -- Use rotate instead of shift
-	constant R:      integer :=  5; -- Reset CPU
-	constant IND:    integer :=  6; -- Indirect
-	constant HLT:    integer :=  7; -- Halt CPU
+		iJUMP,   iJUMPZ,  iSET,     iGET);
+
+	constant Cy:  integer :=  0; -- Carry; set by addition
+	constant Z:   integer :=  1; -- Accumulator is zero
+	constant Ng:  integer :=  2; -- Accumulator is negative
+	constant PAR: integer :=  3; -- Parity of accumulator
+	constant ROT: integer :=  4; -- Use rotate instead of shift
+	constant R:   integer :=  5; -- Reset CPU
+	constant IND: integer :=  6; -- Indirect
+	constant HLT: integer :=  7; -- Halt CPU
 
 	type registers_t is record
 		state:  state_t;    -- state machine register
@@ -107,7 +96,6 @@ architecture rtl of bcpu is
 		begin
 			return integer'image(to_integer(unsigned(slv)));
 		end function;
-
 		variable ll: line;
 	begin
 		-- synthesis translate_off
@@ -126,13 +114,12 @@ begin
 	assert not (ie = '1' and oe = '1') report "input/output at the same time" severity failure;
 	assert not (ie = '1' and ae = '1') report "input whilst changing address" severity failure;
 	adder (add1, add2, acin, ares, acout);           -- shared adder
-	cmd   <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
-	last4 <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
-	last  <= c.dline(c.dline'high)     after delay;  -- processing last bit?
+	cmd         <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
+	last4       <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
+	last        <= c.dline(c.dline'high)     after delay;  -- processing last bit?
 	indirection <= c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0';
 
-	process (clk, rst)
-	begin
+	process (clk, rst) begin
 		if rst = '1' and asynchronous_reset then
 			c.dline <= (others => '0') after delay;
 			c.state <= RESET after delay;
@@ -156,19 +143,18 @@ begin
 		end if;
 	end process;
 
-	process (i, c, cmd, ares, acout, last, last4, indirection)
-	begin
-		o    <= '0' after delay;
-		a    <= '0' after delay;
-		ie   <= '0' after delay;
-		ae   <= '0' after delay;
-		oe   <= '0' after delay;
-		stop <= '0' after delay;
-		add1 <= '0' after delay;
-		add2 <= '0' after delay;
-		acin <= '0' after delay;
-		f        <= c after delay;
-		f.dline  <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
+	process (i, c, cmd, ares, acout, last, last4, indirection) begin
+		o       <= '0' after delay;
+		a       <= '0' after delay;
+		ie      <= '0' after delay;
+		ae      <= '0' after delay;
+		oe      <= '0' after delay;
+		stop    <= '0' after delay;
+		add1    <= '0' after delay;
+		add2    <= '0' after delay;
+		acin    <= '0' after delay;
+		f       <= c after delay;
+		f.dline <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
 
 		if c.first then
 			assert bit_count(c.dline) = 0 report "too many dline bits";
@@ -180,9 +166,7 @@ begin
 			f.state <= c.choice after delay;
 			f.first <= true     after delay;
 			f.last4 <= false    after delay;
-		end if;
-
-		if last4 = '1' then
+		elsif last4 = '1' then
 			f.last4 <= true after delay;
 		end if;
 
@@ -207,7 +191,7 @@ begin
 				f.flags(Z)   <= '1'    after delay;
 				f.flags(PAR) <= parity after delay;
 			else
-				ie          <= '1' after delay;
+				ie           <= '1' after delay;
 
 				if c.acc(0) = '1' then -- determine flag status before EXECUTE
 					f.flags(Z) <= '0' after delay;
@@ -257,7 +241,6 @@ begin
 		when EXECUTE =>
 			f.choice     <= ADVANCE after delay;
 			if c.first then
-				-- Carry and Borrow flags should be cleared manually.
 				f.dline(0)  <= '1'   after delay;
 				f.first     <= false after delay;
 			else
@@ -298,7 +281,6 @@ begin
 						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
-
 				when iLOAD =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
@@ -309,7 +291,6 @@ begin
 					a        <= c.op(0) after delay;
 					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
-
 				when iIN =>
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
@@ -318,7 +299,6 @@ begin
 					end if;
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= LOAD after delay;
-
 				when iOUT =>
 					ae     <=     '1' after delay;
 					a      <= c.op(0) after delay;
@@ -327,7 +307,6 @@ begin
 					end if;
 					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
-
 				when iLITERAL =>
 					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
 					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
@@ -336,7 +315,6 @@ begin
 					a        <= c.op(0) after delay;
 					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
-
 				when iJUMP =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
@@ -369,7 +347,6 @@ begin
 					end if;
 				end case;
 			end if;
-
 		when STORE   =>
 			f.choice <= ADVANCE after delay;
 			if c.first then

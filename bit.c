@@ -3,7 +3,6 @@
  * AUTHOR:  Richard James Howe
  * EMAIL:   howe.r.j.89@gmail.com
  * GIT:     https://github.com/howerj/bit-serial
- *
  * TODO: Macro arguments
  * TODO: Reorder instructions in both 'bit.vhd' and here */
 #include <stdio.h>
@@ -214,12 +213,10 @@ static int assemble(bcpu_t *b, assembler_t *a, const char *input) { /* super laz
 		} else if (args == 1) {
 			if (arg0num) {
 				b->m[a->used++] = op0;
-			} else if (!strcmp(command, "jumpi")) {
+			} else if (!strcmp(command, ".address")) {
 				assert(a->used < MSIZE);
-				b->m[a->used++] = (instruction("jumpi") << 12u) | 0;
-			} else if (!strcmp(command, "pc")) {
-				assert(a->used < MSIZE);
-				b->m[a->used++] = (instruction("pc") << 12u) | 0;
+				b->m[a->used] = a->used;
+				a->used++;
 			} else {
 				var_t *v = lookup(a->vs, NELEM(a->vs), command);
 				if (!v) {
@@ -259,6 +256,17 @@ static int assemble(bcpu_t *b, assembler_t *a, const char *input) { /* super laz
 						goto fail;
 					}
 					a->data -= op1;
+				} else if (!strcmp(command, ".word")) {
+					char buf[256] = { 0 };
+					const size_t l = strlen(arg1);
+					if (l > 255) {
+						error("word to large: %zu/%s", l, arg1);
+						goto fail;
+					}
+					buf[0] = l;
+					memcpy(buf + 1, arg1, l);
+					for (size_t i = 0; i < (l + 1); i += 2)
+						b->m[a->used++] = (buf[i + 1] << 8) | buf[i];
 				} else if (!strcmp(command, ".variable")) {
 					const int added = reference(a->vs, NELEM(a->vs), arg1, TYPE_VAR, a->data--, 1);
 					if (added < 0) {
@@ -367,7 +375,6 @@ static int assemble(bcpu_t *b, assembler_t *a, const char *input) { /* super laz
 fail:
 	return -1;
 }
-
 
 static int assembler(bcpu_t *b, assembler_t *a, const char *input) {
 	assert(a);

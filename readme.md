@@ -359,6 +359,23 @@ For the assembler/simulator:
 - Make the assembler smaller by rewriting it
 - Rotate does not seem to work, this needs fixing
 
+An alternative instruction set might be more appropriate, with only 8
+instructions. The newly available bit could be used for either an indirection
+bit, or to indicate an Input/Output operation. The instructions would be
+something like this:
+
+1. Jump conditional
+2. Set register (pc, flags)
+3. Get (pc, flags)
+4. Load
+5. Store
+6. NAND
+7. Rotate left
+8. Add with carry
+
+This should use far fewer resources. Perhaps the Get/Set functions could also
+be used for I/O operations as well.
+
 # Project Goals
 
 * [x] Map out a viable instruction set
@@ -366,8 +383,8 @@ For the assembler/simulator:
   * [x] Make a primitive assembler
     * [x] Assemble short programs
     * [x] Add macros
-    * [ ] Add an 'include' directive
-    * [ ] Add a directive to compile counted strings
+    * [x] Add an 'include' directive
+    * [x] Add a directive to compile counted strings
     * [ ] Allow macros to have parameters
     * [ ] Add conditional macros
     * [ ] Allow simple expressions to be evaluated

@@ -399,9 +399,28 @@ be used for I/O operations as well.
 * [ ] Implement a tiny Forth on the CPU
 * [ ] Use in other VHDL projects
   * [ ] As a low speed UART (Bit-Banged)
-  * [ ] As a VT100 interface for a VGA Text Terminal
+  * [ ] As a VT100 interface for a VGA Text Terminal in a CGA graphics card
 * [ ] Keep the processor small
 * [ ] Make a bit-parallel version of the CPU
+* [ ] Simplify the CPU
+
+The CPU really should be simplified, the following eight instructions are all
+that are needed:
+
+* NAND (or NOR)
+* ADD (or SUB)
+* ROTATE LEFT (or ROTATE RIGHT)
+* CONDITIONAL JUMP
+* GET REGISTER { PC, CPU FLAGS }
+* SET REGISTER { PC, CPU FLAGS }
+* LOAD
+* STORE
+
+This would free up a bit to use as an address that could be used for I/O
+purposes. The operands field would *always* redirect. This should greatly
+simplify the CPU implementation, reducing its size. Once this is done, the
+Forth system should be programmed for it, then it could be used in other
+projects. The documentation would also need updating...
 
 # References / Appendix
 

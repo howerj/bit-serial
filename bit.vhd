@@ -29,7 +29,7 @@ architecture rtl of bcpu is
 	type cmd_t is (
 		iOR,     iAND,    iXOR,     iADD,
 		iLSHIFT, iRSHIFT, iLOAD,    iSTORE,
-		iIN,     iOUT,    iLITERAL, iSTOREC,
+		iLOADC,  iSTOREC, iLITERAL, iUNUSED,
 		iJUMP,   iJUMPZ,  iSET,     iGET);
 
 	constant Cy:  integer :=  0; -- Carry; set by addition
@@ -46,6 +46,7 @@ architecture rtl of bcpu is
 		choice: state_t;    -- computed next state
 		first:  boolean;    -- First flag, for setting up an instruction
 		last4:  boolean;    -- Are we processing the last 4 bits of the instruction?
+		is_io:  boolean;    -- is get/set an I/O operation?
 		tcarry: std_ulogic; -- temporary carry flag
 		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
 		acc:    std_ulogic_vector(N - 1 downto 0); -- accumulator
@@ -60,6 +61,7 @@ architecture rtl of bcpu is
 		choice => RESET,
 		first  => true,
 		last4  => false,
+		is_io  => false,
 		tcarry => 'X',
 		dline  => (others => '0'),
 		acc    => (others => 'X'),
@@ -206,7 +208,13 @@ begin
 					f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				end if;
 			end if;
-			
+	
+			if c.op(c.op'high - 3) = '1' then
+				f.is_io <= true after delay;
+			else
+				f.is_io <= false after delay;
+			end if;
+
 			f.flags(Ng)  <= c.acc(c.acc'high) after delay;
 
 			   if c.flags(HLT) = '1' then
@@ -230,13 +238,14 @@ begin
 				f.choice <= OPERAND after delay;
 			end if;
 		when OPERAND =>
+			-- TODO: Merge with execute
 			f.choice <= EXECUTE after delay;
 			if c.first then
 				f.dline(0) <= '1'   after delay;
 				f.first    <= false after delay;
 			else
-				ie    <= '1' after delay;
-				f.op  <= i & c.op(c.op'high downto 1) after delay;
+				ie      <= '1' after delay;
+				f.op    <= i & c.op(c.op'high downto 1) after delay;
 			end if;
 		when EXECUTE =>
 			f.choice     <= ADVANCE after delay;
@@ -291,30 +300,20 @@ begin
 					a        <= c.op(0) after delay;
 					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
-				when iIN =>
-					ae     <=     '1' after delay;
-					a      <= c.op(0) after delay;
-					if last = '1' then
-						a <= '1' after delay;
-					end if;
-					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+				when iLOADC =>
+					ae       <=     '1' after delay;
+					a        <= c.op(0) after delay;
+					f.op     <= c.op(0) & c.op(c.op'high downto 1) after delay;
 					f.choice <= LOAD after delay;
-				when iOUT =>
-					ae     <=     '1' after delay;
-					a      <= c.op(0) after delay;
-					if last = '1' then
-						a <= '1' after delay;
-					end if;
-					f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
-					f.choice <= STORE after delay;
-				when iLITERAL =>
-					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
-					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
 				when iSTOREC =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
 					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
+				when iLITERAL =>
+					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
+					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
+				when iUNUSED =>
 				when iJUMP =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
@@ -330,20 +329,40 @@ begin
 						f.choice <= FETCH after delay;
 					end if;
 				when iSET =>
-					if c.op(0) = '0' then
-						f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
-						f.choice <= FETCH after delay;
+					if c.is_io then
+						ae     <=     '1' after delay;
+						a      <= c.op(0) after delay;
+						if last = '1' then
+							a <= '1' after delay;
+						end if;
+						f.op     <=   "0" & c.op(c.op'high downto 1) after delay;
+						f.choice <= STORE after delay;
 					else
-						f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
+						if c.op(0) = '0' then
+							f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
+							f.choice <= FETCH after delay;
+						else
+							f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
+						end if;
+						f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 					end if;
-					f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 				when iGET =>
-					if c.op(0) = '0' then
-						f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
-						f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1) after delay;
+					if c.is_io then
+						ae     <=     '1' after delay;
+						a      <= c.op(0) after delay;
+						if last = '1' then
+							a <= '1' after delay;
+						end if;
+						f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+						f.choice <= LOAD after delay;
 					else
-						f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
-						f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
+						if c.op(0) = '0' then
+							f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
+							f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1) after delay;
+						else
+							f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
+							f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
+						end if;
 					end if;
 				end case;
 			end if;

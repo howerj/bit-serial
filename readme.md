@@ -48,12 +48,12 @@ The following 'make' targets are available:
 	make
 
 By default the [VHDL][] test bench is built and simulated in [GHDL][]. This
-requires that the assembler is build, to assemble the test program [bit.asm][]
-into a file readable by the simulator.
+requires [gforth][] to assemble the test program [bit.fth][] into a file 
+readable by the simulator.
 
 	make run
 
-This target builds the C based simulator/assembler, assembles the test program
+This target builds the C based simulator, assembles the test program
 and runs the simulator on the assembled program.
 
 	make simulation synthesis implementation bitfile
@@ -269,7 +269,7 @@ That's all folks!
 [Xilinx ISE 14.7]: https://www.xilinx.com/products/design-tools/ise-design-suite/ise-webpack.html
 [Nexys 3]: https://store.digilentinc.com/nexys-3-spartan-6-fpga-trainer-board-limited-time-see-nexys4-ddr/
 [Spartan-6]: https://www.xilinx.com/products/silicon-devices/fpga/spartan-6.html
-[bit.asm]: bit.asm
+[bit.fth]: bit.fth
 [Digilent]: https://store.digilentinc.com/
 [r8086.zip]: r8086.zip
 [C]: https://en.wikipedia.org/wiki/C_%28programming_language%29

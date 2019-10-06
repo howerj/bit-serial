@@ -115,7 +115,7 @@ begin
 	assert N >= 8                      report "CPU Width too small: N >= 8"   severity failure;
 	assert not (ie = '1' and oe = '1') report "input/output at the same time" severity failure;
 	assert not (ie = '1' and ae = '1') report "input whilst changing address" severity failure;
-	adder (add1, add2, acin, ares, acout);           -- shared adder
+	adder (add1, add2, acin, ares, acout);                 -- shared adder
 	cmd         <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 	last4       <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
 	last        <= c.dline(c.dline'high)     after delay;  -- processing last bit?

@@ -177,11 +177,11 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 
 		case 0xC: pc = op1;                              break; /* JUMP    */
 		case 0xD: if (!acc) pc = op1;                    break; /* JUMPZ   */
-		case 0xE: /* SET */
+		case 0xE:                                               /* SET     */
 			if (op1 & 0x0800) { bstore(b, io, 1, 0x8000u | op1, acc); } 
 			else { if (op1 & 1) flg = acc; else pc = acc; } 
 			break;
-		case 0xF: /* GET */
+		case 0xF:                                               /* GET */
 			if (op1 & 0x0800) { acc = bload(b, io, 1, 0x8000u | op1); } 
 			else { if (op1 & 1) acc = flg; else acc = pc; } 
 			break;
@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
 	bcpu_io_t io = { .in = stdin, .out = stdout };
 	FILE *file = stdin, *trace = stderr, *hex = NULL;
 	if (argc < 2)
-		die("usage: %s -trashf input? out.hex?", argv[0]);
+		die("usage: %s -[tsf] input.hex? out.hex?", argv[0]);
 	if (argc >= 3)
 		file = fopen_or_die(argv[2], "rb");
 	if (argc >= 4)

@@ -20,13 +20,14 @@ get-current meta set-current
 meta +order
 
 000a constant =lf
-1000 constant size
+   2 constant =cell
+2000 constant size
 
 create tflash size cells here over erase allot
 
 variable tdp
 variable tep
-size 1- tep !
+size =cell - tep !
 
 : there tdp @ ;
 : tend tep @ ;
@@ -45,7 +46,7 @@ size 1- tep !
 : hex# ( u -- addr len )  0 <# base @ >r hex =lf hold # # # # r> base ! #> ;
 : save-hex ( <name> -- )
   parse-word w/o create-file throw
-  there 0 do i t@  over >r hex# r> write-file throw 2 +loop
+  size 0 do i t@  over >r hex# r> write-file throw 2 +loop
    close-file throw ;
 
 : tvar tend t! create tend , -2 tep +! does> @ ;
@@ -58,11 +59,11 @@ size 1- tep !
 : iADD     3000 or t, ;
 : iLSHIFT  4000 or t, ;
 : iRSHIFT  5000 or t, ;
-: iLOAD    6000 or t, ;
-: iSTORE   7000 or t, ;
+: iLOAD    2/ 6000 or t, ;
+: iSTORE   2/ 7000 or t, ;
 
-: iLOAD-C  8000 or t, ;
-: iSTORE-C 9000 or t, ;
+: iLOAD-C  2/ 8000 or t, ;
+: iSTORE-C 2/ 9000 or t, ;
 : iLITERAL A000 or t, ;
 : iUNUSED  B000 or t, ;
 : iJUMP    C000 or t, ;
@@ -81,23 +82,27 @@ size 1- tep !
 
 0 tvar cnt
 FFFF tvar set
+000F tvar nib0
+2048 tvar uartWrite
+
 0 tvar r0
 0 tvar r1
 0 tvar r2
+0 tvar sp
 
 : save r0 iSTORE-C ;
 : load r0 iLOAD-C ;
 : flags? 1 iGET ;
 : flags! 1 iSET ;
-: nop 0 iOR ;
 : clr 0 iLITERAL ;
 : halt flgHlt iLITERAL flags! ;
 : indirect flgInd iLITERAL flags! ;
 : direct clr flags! ;
 : inc 1 iADD ;  ( works in direct/indirect mode if address 1 = 1 )
+: nop 0 iOR ;   ( works in direct/indirect mode if address 0 = 0 )
 : branch 2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
-: zero? flags? flgZ iAND ;
+: zero? flags? 2 iAND ;
 
 : invert indirect set iXOR ;
 
@@ -115,20 +120,21 @@ FFFF tvar set
 label entry
 	0 t,
 	1 t,
+	2 t,
 	clr
-
-	$2    iLITERAL \ load a 2
-	$0FFF iLSHIFT  \ shift this to high bits
-	$48   iOR      \ load LSB to store
+	indirect
+	uartWrite iLOAD-C
 	$801  iSET     \ write a single char to the UART
 
+	clr
 	begin
 		cnt iLOAD-C
 		inc
-		F iAND
+		nib0 2/ iAND
 		cnt iSTORE-C
 		zero?
 	until
+
 
 label end
 	halt

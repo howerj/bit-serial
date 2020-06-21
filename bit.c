@@ -156,7 +156,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
 		flg |= (!(bits(acc) & 1u)) << fPAR; /* set parity bit    */
 
-		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
+		const int loadit = !(cmd & 0x4) && (flg & (1u << fIND));
 		const mw_t lop = loadit ? bload(b, io, 0, op1) : op1; 
 		pc++;
 		switch (cmd) {

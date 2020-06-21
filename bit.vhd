@@ -47,6 +47,7 @@ architecture rtl of bcpu is
 		first:  boolean;    -- First flag, for setting up an instruction
 		last4:  boolean;    -- Are we processing the last 4 bits of the instruction?
 		is_io:  boolean;    -- is get/set an I/O operation?
+		indir:  boolean;    -- does the instruction require indirection of the operand?
 		tcarry: std_ulogic; -- temporary carry flag
 		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
 		acc:    std_ulogic_vector(N - 1 downto 0); -- accumulator
@@ -62,6 +63,7 @@ architecture rtl of bcpu is
 		first  => true,
 		last4  => false,
 		is_io  => false,
+		indir  => false,
 		tcarry => 'X',
 		dline  => (others => '0'),
 		acc    => (others => 'X'),
@@ -74,7 +76,6 @@ architecture rtl of bcpu is
 	signal cmd: cmd_t; -- Shows up nicely in traces as an enumerated value
 	signal add1, add2, acin, ares, acout: std_ulogic; -- shared adder signals
 	signal last4, last:                   std_ulogic; -- state sequence signals
-	signal indirection:                   boolean;    -- indirection on for those instruction it applies to
 
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
@@ -119,7 +120,6 @@ begin
 	cmd         <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 	last4       <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
 	last        <= c.dline(c.dline'high)     after delay;  -- processing last bit?
-	indirection <= c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0';
 
 	process (clk, rst) begin
 		if rst = '1' and asynchronous_reset then
@@ -145,7 +145,7 @@ begin
 		end if;
 	end process;
 
-	process (i, c, cmd, ares, acout, last, last4, indirection) begin
+	process (i, c, cmd, ares, acout, last, last4) begin
 		o       <= '0' after delay;
 		a       <= '0' after delay;
 		ie      <= '0' after delay;
@@ -168,6 +168,12 @@ begin
 			f.state <= c.choice after delay;
 			f.first <= true     after delay;
 			f.last4 <= false    after delay;
+			if c.flags(IND) = '1' then
+				if i = '0' and c.state = FETCH then
+					f.indir <= true;
+					f.state <= INDIRECT;
+				end if;
+			end if;
 		elsif last4 = '1' then
 			f.last4 <= true after delay;
 		end if;
@@ -190,6 +196,7 @@ begin
 			if c.first then
 				f.dline(0)   <= '1'    after delay;
 				f.first      <= false  after delay;
+				f.indir      <= false  after delay;
 				f.flags(Z)   <= '1'    after delay;
 				f.flags(PAR) <= parity after delay;
 			else
@@ -221,12 +228,13 @@ begin
 				f.choice <= HALT after delay;
 			elsif c.flags(R) = '1' then
 				f.choice <= RESET after delay;
-			elsif indirection then
+			elsif c.indir then
 				f.choice <= INDIRECT after delay;
 			else
 				f.choice <= EXECUTE after delay;
 			end if;
 		when INDIRECT =>
+			assert c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0' severity error;
 			f.choice <= EXECUTE after delay;
 			if c.first then
 				f.dline(0)  <= '1'   after delay;
@@ -238,7 +246,7 @@ begin
 				f.choice <= OPERAND after delay;
 			end if;
 		when OPERAND =>
-			-- TODO: Merge with execute
+			-- TODO: Merge with execute?
 			f.choice <= EXECUTE after delay;
 			if c.first then
 				f.dline(0) <= '1'   after delay;
@@ -259,7 +267,7 @@ begin
 					f.acc <= (c.op(0) or c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 				when iAND =>
 					f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-					if (not c.last4) or indirection then
+					if (not c.last4) or c.indir then
 						f.op  <= "0" & c.op (c.op'high downto 1) after delay;
 						f.acc <= (c.op(0) and c.acc(0)) & c.acc(c.acc'high downto 1) after delay;
 					end if;

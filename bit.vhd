@@ -72,7 +72,7 @@ architecture rtl of bcpu is
 		flags  => (others => 'X'),
 		cmd    => (others => 'X'));
 
-	signal c, f: registers_t := registers_default; -- BCPU registers
+	signal c, f: registers_t := registers_default; -- BCPU registers, all of them.
 	signal cmd: cmd_t; -- Shows up nicely in traces as an enumerated value
 	signal add1, add2, acin, ares, acout: std_ulogic; -- shared adder signals
 	signal last4, last:                   std_ulogic; -- state sequence signals
@@ -171,7 +171,7 @@ begin
 			if c.flags(IND) = '1' then
 				if i = '0' and c.state = FETCH then
 					f.indir <= true;
-					f.state <= INDIRECT;
+					f.state <= INDIRECT; -- Override FETCH Choice!
 				end if;
 			end if;
 		elsif last4 = '1' then
@@ -228,11 +228,10 @@ begin
 				f.choice <= HALT after delay;
 			elsif c.flags(R) = '1' then
 				f.choice <= RESET after delay;
-			elsif c.indir then
-				f.choice <= INDIRECT after delay;
 			else
 				f.choice <= EXECUTE after delay;
 			end if;
+		-- NB. 'f.choice' may be overwritten for INDIRECT
 		when INDIRECT =>
 			assert c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0' severity error;
 			f.choice <= EXECUTE after delay;
@@ -246,7 +245,6 @@ begin
 				f.choice <= OPERAND after delay;
 			end if;
 		when OPERAND =>
-			-- TODO: Merge with execute?
 			f.choice <= EXECUTE after delay;
 			if c.first then
 				f.dline(0) <= '1'   after delay;

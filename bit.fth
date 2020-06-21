@@ -4,7 +4,6 @@
   Based off of the meta-compiler for the j1 processor available at
   <https://github.com/samawati/j1eforth> )
 
-
 only forth definitions hex
 
 wordlist constant meta
@@ -16,7 +15,7 @@ wordlist constant meta
 : -order ( wid -- ) get-order (order) nip set-order ;
 : +order ( wid -- ) dup >r -order get-order r> swap 1+ set-order ;
 
-get-current meta set-current
+get-current meta set-current drop
 meta +order
 
 000a constant =lf
@@ -84,11 +83,13 @@ size =cell - tep !
 FFFF tvar set
 000F tvar nib0
 2048 tvar uartWrite
+2000 tvar _uwrite
 
 0 tvar r0
 0 tvar r1
 0 tvar r2
 0 tvar sp
+0 tvar rp
 
 : save r0 iSTORE-C ;
 : load r0 iLOAD-C ;
@@ -96,6 +97,7 @@ FFFF tvar set
 : flags! 1 iSET ;
 : clr 0 iLITERAL ;
 : halt flgHlt iLITERAL flags! ;
+: reset flgR   iLITERAL flags! ;
 : indirect flgInd iLITERAL flags! ;
 : direct clr flags! ;
 : inc 1 iADD ;  ( works in direct/indirect mode if address 1 = 1 )
@@ -117,14 +119,19 @@ FFFF tvar set
 : repeat branch then ;
 : again branch ;
 
+0 tvar _emit ( TODO: wait if TX Queue full )
+: emit _emit iSTORE-C _uwrite iLOAD-C _emit 2/ iOR 801 iSET ; 
+
 label entry
 	0 t,
 	1 t,
 	2 t,
 	clr
 	indirect
-	uartWrite iLOAD-C
-	$801  iSET     \ write a single char to the UART
+	$800 iGET
+	$800 iSET
+
+	char H iLITERAL emit 
 
 	clr
 	begin
@@ -135,8 +142,8 @@ label entry
 		zero?
 	until
 
-
 label end
+	\ reset
 	halt
 
 save-hex bit.hex

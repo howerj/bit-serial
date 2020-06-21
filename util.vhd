@@ -161,7 +161,6 @@ architecture behavior of fifo is
 	signal is_full:  std_ulogic := '0';
 	signal is_empty: std_ulogic := '1';
 begin
-	-- TODO: Allow read to be configurable to next or current rindex
 	do       <= data(rindex) after g.delay;
 	full     <= is_full after g.delay;  -- buffer these bad boys
 	empty    <= is_empty after g.delay;

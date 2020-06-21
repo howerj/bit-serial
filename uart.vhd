@@ -41,15 +41,10 @@
 -- See: 
 -- * <https://en.wikipedia.org/wiki/Universal_asynchronous_receiver-transmitter>
 --
--- TODO: Fold this into 'util.vhd'.
 -- NOTE: We could replace this entire package with an entirely software driven
 -- solution. The only hardware we would need two timers driven at the sample
 -- rate (one for RX, one for TX) and a deglitched RX signal. An interrupt
 -- would be generated on the timers expiry.
--- TODO: Instead of having a separate module for if we are using a FIFO or
--- not we could instead enable this with generics and generate statements.
--- The interface would need to be kept the same, however this would simplify
--- things for the user of the module.
 library ieee, work;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -449,7 +444,7 @@ entity uart_rx is
 	port (
 		clk:    in std_ulogic;
 		rst:    in std_ulogic;
-		cr:    out std_ulogic;        -- reset sample/baud clock when start bit detected
+		cr:    out std_ulogic;       -- reset sample/baud clock when start bit detected
 		baud, sample: in std_ulogic; -- pulses at baud and sample rate
 		failed: out std_ulogic_vector(1 downto 0);
 		ctr:    in std_ulogic_vector(7 downto 0);
@@ -593,9 +588,6 @@ begin
 		when done => -- The consuming module needs to store rx_c/fail_c immediately
 			we      <= '1' after g.delay;
 			state_n <= idle after g.delay;
-			--rx_n    <= (others => '0') after g.delay;
-			--sr_n    <= (others => '0') after g.delay;
-			--fail_n  <= (others => '0') after g.delay;
 		end case;
 
 		if ctr_we = '1' then
@@ -782,8 +774,6 @@ begin
 		wait;
 	end process;
 
-	-- TODO: Assert what we receive is what we sent, also, introduce
-	-- framing and parity errors and make sure we catch them.
 	stimulus: process 
 		procedure write(data: std_ulogic_vector(di'range)) is
 		begin

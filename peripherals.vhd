@@ -72,18 +72,14 @@ architecture rtl of peripherals is
 
 	signal io_addr: std_ulogic_vector(2 downto 0);
 begin
-	-- tx    <= c.c after g.delay;
-	io    <= c.r_a(c.r_a'high) = '1' and ae = '0' after g.delay;
-	io_addr <= c.r_a(io_addr'range);
-	write <= true when (c.r_ie and (c.r_ie xor f.r_ie)) = '1' else false after g.delay;
-	ld    <= c.r_ld after g.delay;
-	o     <= c.r_o(0) after g.delay;
+	io           <= c.r_a(c.r_a'high) = '1' and ae = '0' after g.delay;
+	io_addr      <= c.r_a(io_addr'range);
+	write        <= true when (c.r_ie and (c.r_ie xor f.r_ie)) = '1' else false after g.delay;
+	ld           <= c.r_ld after g.delay;
+	o            <= c.r_o(0) after g.delay;
 	tx_fifo_data <= c.r_i(tx_fifo_data'range);
-	reg   <= c.r_i(reg'range);
+	reg          <= c.r_i(reg'range);
 
-	-- TODO: Selected between raw UART pin input/output and the UART module
-	-- with a generic. This will allow a bit-banged UART driver to be developed.
-	-- This same UART module could be used in the test bench to test that driver.
 	uart: entity work.uart_top
 		generic map (g => g)
 		port map(
@@ -173,7 +169,6 @@ begin
 				when "111" =>
 				when others =>
 				end case;
-				-- f.r_o(8)        <= rx after g.delay;
 			end if;
 		end if;
 
@@ -183,7 +178,8 @@ begin
 			else
 				case io_addr is
 				when "000" => f.r_ld <= c.r_i(c.r_ld'range) after g.delay;
-				when "001" => tx_fifo_we <= c.r_i(13) after g.delay; rx_fifo_re <= c.r_i(10) after g.delay;
+				when "001" =>	tx_fifo_we <= c.r_i(13) after g.delay; 
+						rx_fifo_re <= c.r_i(10) after g.delay;
 				when "010" => clock_reg_tx_we <= '1' after g.delay;
 				when "011" => clock_reg_rx_we <= '1' after g.delay;
 				when "100" => control_reg_we <= '1' after g.delay;

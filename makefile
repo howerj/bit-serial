@@ -1,11 +1,18 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O2
+USB?=/dev/ttyUSB0
+BAUD?=115200
+#BAUD?=9600
+
 .PHONY: all run simulation viewer clean documentation
 
 all: bit simulation
 
 run: bit bit.hex
 	./bit - bit.hex
+
+talk:
+	picocom --omap delbs -e b -b ${BAUD} ${USB}
 
 simulation: tb.ghw
 

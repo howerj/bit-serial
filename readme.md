@@ -1,22 +1,11 @@
+# BIT SERIAL CPU and TOOL-CHAIN
 
-		                           ____   ___  ____  _  _                                     
-		                          (  _ \ / __)(  _ \/ )( \                                    
-		                           ) _ (( (__  ) __/) \/ (                                    
-		                          (____/ \___)(__)  \____/                                    
-		  __     ____  __  ____    ____  ____  ____  __   __   __       ___  ____  _  _       
-		 / _\   (  _ \(  )(_  _)  / ___)(  __)(  _ \(  ) / _\ (  )     / __)(  _ \/ )( \      
-		/    \   ) _ ( )(   )(    \___ \ ) _)  )   / )( /    \/ (_/\  ( (__  ) __/) \/ (      
-		\_/\_/  (____/(__) (__)   (____/(____)(__\_)(__)\_/\_/\____/   \___)(__)  \____/
-
-
-
-| Project   | Bit-Serial CPU in VHDL                 |
-| --------- | -------------------------------------- |
-| Author    | Richard James Howe                     |
-| Copyright | 2019 Richard James Howe                |
-| License   | MIT                                    |
-| Email     | howe.r.j.89@gmail.com                  |
-| Website   | <https://github.com/howerj/bit-serial> |
+*  Project:   Bit-Serial CPU in VHDL
+*  Author:    Richard James Howe
+*  Copyright: 2019,2020 Richard James Howe
+*  License:   MIT
+*  Email:     howe.r.j.89@gmail.com
+*  Website:   <https://github.com/howerj/bit-serial>
 
 *Processing data one bit at a time, since 2019*.
 
@@ -33,8 +22,8 @@ be emulated if they are needed. If such features are needed, or faster
 throughput (whilst still remaining quite small) other [Soft-Core][] CPUs are
 available, such as the [H2][]. 
 
-To the C based simulator for the project, you will need a C
-compiler and 'make'. To build the [VHDL][] simulator, you will need [GHDL][]
+To build and run the C based simulator for the project, you will need a C
+compiler and 'make'. To build and run the [VHDL][] simulator, you will need [GHDL][]
 installed.
 
 The cross compiler requires [gforth][].
@@ -84,10 +73,186 @@ nothing in terms of floor space, the main cost will be in development time.
 
 In short, the project may be useful if:
 
-* Space is at a premium in your design.
+* FPGA Floor space is at a premium in your design.
 * You have spare memory for the program and storage.
 * You need a programmable CPU that supports a reasonable instruction set.
 * *Execution speed is not a concern*.
+
+# CPU Specification
+
+The CPU is a 16-bit design, in principle a normal bit parallel CPU design could
+be implemented of the same CPU, but in practice you not end up with a CPU like 
+this one if you remove the bit-serial restriction. 
+
+The CPU has 16 operation, each instruction consists of a 4-bit operation field
+and a 12-bit operand. Depending on the CPU mode that operand and instruction
+that operand can either be a literal or an address to load a 16-bit word from
+(addresses are word and not byte oriented, so the lowest bit of an address
+specifies the next word not byte). Only the first 8 operations can have their
+operand indirected, which is deliberate.
+
+The CPU is an accumulator machine, all instructions either modify or use the
+accumulator to store operation results in them. The CPU has three registers
+including the accumulator, the other two are the program counter which is
+automatically incremented after each instruction excluding the jump
+instructions (but including the SET instruction which can modify the program
+counter!) and a flags register.
+
+The instructions are:
+
+	| ----------- | -------------------------------------- | --------------------------------- |
+	| Instruction | C Operation                            | Description                       |
+	| ----------- | -------------------------------------- | --------------------------------- |
+	| OR          | acc |= lop                             | Bitwise Or                        |
+	| AND         | acc &= indir ? lop : 0xF000 | lop      | Bitwise And                       |
+	| XOR         | acc ^= lop                             | Bitwise Exclusive Or              |
+	| ADD         | acc += lop + carry;                    | Add with carry, sets carry        |
+	| LSHIFT      | acc = acc << lop (or rotate left)      | Shift left or Rotate left         |
+	| RSHIFT      | acc = acc >> lop (or rotate right)     | Shift right or Rotate right       |
+	| LOAD        | acc = memory(lop)                      | Load                              |
+	| STORE       | memory(lop) = acc                      | Store                             |
+	| LOADC       | acc = memory(op)                       | Load from memory constant addr    |
+	| STOREC      | memory(op) = acc                       | Store to memory constant addr     |
+	| LITERAL     | acc = op                               | Load literal into accumulator     |
+	| UNUSED      | N/A                                    | Unused instruction                |
+	| JUMP        | pc = op                                | Unconditional Jump                |
+	| JUMPZ       | if(!acc){pc = op }                     | Jump If Zero                      |
+	| SET         | if(op&0x800) { io(op|0x8000) = acc   } | Set I/O or Register               |
+	|             | else { if(op&1){flg=acc}else{pc=acc} } |                                   |
+	| GET         | if(op&0x800) { acc = io(op|0x8000)   } | Get I/O or Register               |
+	|             | else { if(op&1){acc=flg}else{acc=pc} } |                                   |
+	| ----------- | -------------------------------------- | --------------------------------- |
+
+* pc    = program counter
+* acc   = accumulator
+* indir = indirect flag
+* lop   = instruction operand if indirect flag not set, otherwise it equals to the memory
+          location pointed to by the operand
+* op    = instruction operand
+* flg   = flags register
+
+The GET/SET instructions can be used to perform I/O as well as
+
+The flags in the 'flg' register are:
+
+	| ---- | --- | --------------------------------------- |
+	| Flag | Bit | Description                             |
+	| ---- | --- | --------------------------------------- |
+	| Cy   |  0  | Carry flag, set by addition instruction |
+	| Z    |  1  | Zero flag                               |
+	| Ng   |  2  | Negative flag                           | 
+	| PAR  |  3  | Parity flag, parity of accumulator      |
+	| ROT  |  4  | If set, shifts become rotates           |
+	| R    |  5  | Reset Flag - Resets the CPU             |
+	| IND  |  6  | Indirect Flag - turns indirection on    |
+	| HLT  |  7  | Halt Flag - Stops the CPU               |
+	| ---- | --- | --------------------------------------- |
+
+# Peripherals
+
+The system has a minimal set of peripherals; a bank of switches with LEDs next
+to each switch and a UART capable of transmission and reception, other
+peripherals could be added as needed. 
+
+## Register Map
+
+The I/O register map for the device is very small as there are very few
+peripherals. Note that the addresses are of the form '0x88XX', this is the
+address seen on the address bus, you only need to write to the address '0x08XX'
+using the GET/SET instructions, which will set the top bit automatically. This
+is done so that the LOAD/STORE instructions can use the full range of their
+operand for memory operations.
+
+	| ------- | -------------- |
+	| Address | Name           |
+	| ------- | -------------- |
+	| 0x8800  | LED/Switches   |
+	| 0x8801  | UART TX/RX     |
+	| 0x8802  | UART Clock TX  |
+	| 0x8803  | UART Clock RX  |
+	| 0x8804  | UART Control   |
+	| ------- | -------------- |
+
+* LED/Switches
+
+A bank of switches, non-debounced, with LED lights next to them.
+
+	+---------------------------------------------------------------+
+	| F | E | D | C | B | A | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+	+---------------------------------------------------------------+
+	|                           |   Switches 1 = on, 0 = off        | READ
+	+---------------------------------------------------------------+
+	|                           |   LED 1 = on, 0 = off             | WRITE
+	+---------------------------------------------------------------+
+
+* UART TX/RX
+
+The UART TX/RX register is used to read and write data bytes to the UART and
+check on the UART status. The UART has a FIFO that is used to capture the
+results of the UART. The usage of which is non-optional.
+
+	+---------------------------------------------------------------+
+	| F | E | D | C | B | A | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+	+---------------------------------------------------------------+
+	|       |TFF|TFE|   |RFF|RFE|      RX DATA BYTE                 | READ
+	+---------------------------------------------------------------+
+	|   |TFW|       |RFR|       |      TX DATA BYTE                 | WRITE
+	+---------------------------------------------------------------+
+	RFE = RX FIFO EMPTY
+	RFF = RX FIFO FULL
+	RFR = RX FIFO READ ENABLE
+	TFE = TX FIFO EMPTY
+	TFF = TX FIFO FULL
+	TFW = TX FIFO WRITE ENABLE
+
+* UART Clock TX
+
+The UART Transmission clock, independent from the Reception Clock, is
+controllable via this register.
+
+Defaults are: 115200 Baud
+
+	+---------------------------------------------------------------+
+	| F | E | D | C | B | A | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+	+---------------------------------------------------------------+
+	|                                                               | READ
+	+---------------------------------------------------------------+
+	|             UART TX CLOCK DIVISOR                             | WRITE
+	+---------------------------------------------------------------+
+
+* UART Clock RX
+
+The UART Reception clock, independent from the Transmission Clock, is
+controllable via this register.
+
+Defaults are: 115200 Baud
+
+	+---------------------------------------------------------------+
+	| F | E | D | C | B | A | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+	+---------------------------------------------------------------+
+	|                                                               | READ
+	+---------------------------------------------------------------+
+	|            UART RX CLOCK DIVISOR                              | WRITE
+	+---------------------------------------------------------------+
+
+* UART Clock Control
+
+This clock is used to control UART options such as the number of bits, 
+
+Defaults are: 8N1, no parity
+
+	+---------------------------------------------------------------+
+	| F | E | D | C | B | A | 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+	+---------------------------------------------------------------+
+	|                                                               | READ
+	+---------------------------------------------------------------+
+	|                               |   DATA BITS   |STPBITS|EPA|UPA| WRITE
+	+---------------------------------------------------------------+
+	UPA       = USE PARITY BITS
+	EPA       = EVEN PARITY
+	STPBITS   = Number of stop bits
+	DATA BITS = Number of data bits 
+
 
 # Other Soft Microprocessors
 
@@ -108,14 +273,6 @@ assembler.
 
 * <https://github.com/howerj/forth-cpu>
 
-## Other cores
-
-* <https://en.wikipedia.org/wiki/Soft_microprocessor>
-
-# CPU Specification
-
-**TODO**
-
 # Project Goals
 
 * [x] Map out a viable instruction set
@@ -133,6 +290,16 @@ assembler.
   * [ ] As a low speed UART (Bit-Banged)
   * [ ] As a VT100 interface for a VGA Text Terminal in a CGA graphics card
 * [ ] Simplify the CPU
+
+# Notes
+
+* The CPU is difficult to program, and really needs a new instruction set, one
+  that is easier to use. The CPU probably needs redesigning...There are too
+  many different flags and states. Either the CPU needs redesigning or the
+  tool chain should hide all this complexity.
+* Variable cycle states should have been used, FETCH could be 4/5 cycles,
+  INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
+  EXECUTE 16/17 along with the other instructions.
 
 # References / Appendix
 

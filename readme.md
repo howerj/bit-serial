@@ -14,9 +14,9 @@
 This is a project for a [bit-serial CPU][], which is a CPU that has an architecture
 which processes a single bit at a time instead of in parallel like a normal
 CPU. This allows the CPU itself to be a lot smaller, the penalty is that it is
-a lot slower. The CPU itself is called *bcpu*.
+*a lot* slower. The CPU itself is called *bcpu*.
 
-The CPU is incredibly basic, lacking support for features required to support
+The CPU is incredibly basic, lacking features required to support
 higher level programming (such as function calls). Instead such features can 
 be emulated if they are needed. If such features are needed, or faster
 throughput (whilst still remaining quite small) other [Soft-Core][] CPUs are
@@ -95,33 +95,33 @@ The CPU is an accumulator machine, all instructions either modify or use the
 accumulator to store operation results in them. The CPU has three registers
 including the accumulator, the other two are the program counter which is
 automatically incremented after each instruction excluding the jump
-instructions (but including the SET instruction which can modify the program
-counter!) and a flags register.
+instructions (the SET instruction is also excluded when setting the program
+counter only) and a flags register.
 
 The instructions are:
 
-	| ----------- | -------------------------------------- | --------------------------------- |
-	| Instruction | C Operation                            | Description                       |
-	| ----------- | -------------------------------------- | --------------------------------- |
-	| OR          | acc |= lop                             | Bitwise Or                        |
-	| AND         | acc &= indir ? lop : 0xF000 | lop      | Bitwise And                       |
-	| XOR         | acc ^= lop                             | Bitwise Exclusive Or              |
-	| ADD         | acc += lop + carry;                    | Add with carry, sets carry        |
-	| LSHIFT      | acc = acc << lop (or rotate left)      | Shift left or Rotate left         |
-	| RSHIFT      | acc = acc >> lop (or rotate right)     | Shift right or Rotate right       |
-	| LOAD        | acc = memory(lop)                      | Load                              |
-	| STORE       | memory(lop) = acc                      | Store                             |
-	| LOADC       | acc = memory(op)                       | Load from memory constant addr    |
-	| STOREC      | memory(op) = acc                       | Store to memory constant addr     |
-	| LITERAL     | acc = op                               | Load literal into accumulator     |
-	| UNUSED      | N/A                                    | Unused instruction                |
-	| JUMP        | pc = op                                | Unconditional Jump                |
-	| JUMPZ       | if(!acc){pc = op }                     | Jump If Zero                      |
-	| SET         | if(op&0x800) { io(op|0x8000) = acc   } | Set I/O or Register               |
-	|             | else { if(op&1){flg=acc}else{pc=acc} } |                                   |
-	| GET         | if(op&0x800) { acc = io(op|0x8000)   } | Get I/O or Register               |
-	|             | else { if(op&1){acc=flg}else{acc=pc} } |                                   |
-	| ----------- | -------------------------------------- | --------------------------------- |
+	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
+	| Instruction | C Operation                            | Description                       | Cycles           |
+	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
+	| OR          | acc |= lop                             | Bitwise Or                        | [3 or 5]*(N+1)   |
+	| AND         | acc &= indir ? lop : 0xF000 | lop      | Bitwise And                       | [3 or 5]*(N+1)   |
+	| XOR         | acc ^= lop                             | Bitwise Exclusive Or              | [3 or 5]*(N+1)   |
+	| ADD         | acc += lop + carry;                    | Add with carry, sets carry        | [3 or 5]*(N+1)   |
+	| LSHIFT      | acc = acc << lop (or rotate left)      | Shift left or Rotate left         | [3 or 5]*(N+1)   |
+	| RSHIFT      | acc = acc >> lop (or rotate right)     | Shift right or Rotate right       | [3 or 5]*(N+1)   |
+	| LOAD        | acc = memory(lop)                      | Load                              | [4 or 6]*(N+1)   |
+	| STORE       | memory(lop) = acc                      | Store                             | [4 or 6]*(N+1)   |
+	| LOADC       | acc = memory(op)                       | Load from memory constant addr    | 4*(N+1)          |
+	| STOREC      | memory(op) = acc                       | Store to memory constant addr     | 4*(N+1)          |
+	| LITERAL     | acc = op                               | Load literal into accumulator     | 3*(N+1)          |
+	| UNUSED      | N/A                                    | Unused instruction                | 3*(N+1)          |
+	| JUMP        | pc = op                                | Unconditional Jump                | 2*(N+1)          |
+	| JUMPZ       | if(!acc){pc = op }                     | Jump If Zero                      | [2 or 3]*(N+1)   |
+	| SET         | if(op&0x800) { io(op|0x8000) = acc   } | Set I/O or Register               | [2,3 or 4]*(N+1) |
+	|             | else { if(op&1){flg=acc}else{pc=acc} } |                                   |                  |
+	| GET         | if(op&0x800) { acc = io(op|0x8000)   } | Get I/O or Register               | [3 or 4]*(N+1)   |
+	|             | else { if(op&1){acc=flg}else{acc=pc} } |                                   |                  |
+	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
 
 * pc    = program counter
 * acc   = accumulator
@@ -130,8 +130,20 @@ The instructions are:
           location pointed to by the operand
 * op    = instruction operand
 * flg   = flags register
+* N     = bit width, which is 16.
 
-The GET/SET instructions can be used to perform I/O as well as
+The GET/SET instructions can be used to perform I/O, and is also used to get/set
+some of the registers (program counter and flag register). These are the most
+complicated instructions.
+
+Notice that the when the indirect flag is *not* set that the top bits will be
+anded with '0xF' and not '0x0'.
+
+The number of cycles an instruction takes to complete depends on whether it
+performs an indirection, or in the case of GET/SET it depends if it it setting
+the program counter (2 cycles only) or the flags register (3 cycles), or performing 
+an I/O operation (4 cycles), getting the flags or program counter always costs
+3 cycles.
 
 The flags in the 'flg' register are:
 
@@ -147,6 +159,28 @@ The flags in the 'flg' register are:
 	| IND  |  6  | Indirect Flag - turns indirection on    |
 	| HLT  |  7  | Halt Flag - Stops the CPU               |
 	| ---- | --- | --------------------------------------- |
+
+* The carry flag (Cy) is set by the ADD instruction, it can also be set and cleared
+with the GET/SET instructions.
+* 'Z' is set whenever the accumulator is zero.
+* 'Ng' is set whenever the accumulator has its highest bit set, indicating that
+  the accumulator is negative.
+* 'PAR' is the parity of the accumulator, the parity flag can be compiled at 
+synthesis time to even or odd parity.
+* 'ROT', if set, means the 'LSHIFT' and 'RSHIFT' instructions will perform
+rotations instead of left/right shifts.
+* 'R', Reset flag, this resets the CPU immediately, only the HLT flag takes
+precedence.
+* 'IND', The indirect flag, which enables indirection on those instructions
+which can be indirected.
+* 'HLT', The halt flag takes priority over everything else, sending the CPU
+into a halt state.
+
+There is really not much else to this CPU from the point of view of a user of
+this core, integrating this core into another system is more complicated
+however, you will need to be far more aware of timing of signals and their
+enable lines. Much like the processor, a single bit bus in conjunction with an
+enable is used to communicate with the outside world.
 
 # Peripherals
 
@@ -281,8 +315,9 @@ assembler.
 * [x] Implement the system on an FPGA
   * [x] Implement the CPU
   * [x] Implement a memory and peripheral interface
-  * [ ] Add an interrupt request mechanism
-  * [ ] Add a counter that can cause an interrupt to the core
+  * [ ] Add an interrupt request mechanism?
+  * [ ] Add a counter/timer peripheral
+  * [ ] ...that can cause an interrupt to the core
 * [x] Create a tiny test program
 * [x] Verify program works in hardware
 * [ ] Implement a tiny Forth on the CPU
@@ -293,23 +328,44 @@ assembler.
 
 # Notes
 
-* The CPU is difficult to program, and really needs a new instruction set, one
-  that is easier to use. The CPU probably needs redesigning...There are too
-  many different flags and states. Either the CPU needs redesigning or the
-  tool chain should hide all this complexity.
+* The CPU is difficult to program, there are three ways of remedying this;
+  a complete CPU instruction set redesign, borrowing one more bit from the
+  address/operand and using this as an indirection bit (which would free up
+  some instructions) and the last, most preferable, is to design a tool-chain
+  which hides all this by providing a Forth interpreter as a programming
+  interface. The reason the processor is difficult to program for is; a lack
+  of a built in call/return mechanism and instructions that require setting
+  mode flags.
+* Two of these cores could be hooked up to one Dual Port block RAM. This is
+  another intention and goal of the device, this allows one FPGA based
+  application (say a text terminal) to share memory with one BCPU core.
 * Variable cycle states should have been used, FETCH could be 4/5 cycles,
   INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
   EXECUTE 16/17 along with the other instructions.
+* In principle interrupts could be added in the following way:
+  - During any cycle an interrupt is noted and latched in.
+  - When the processor gets back into the FETCH state it checks if
+  interrupts are enabled, if they are then current program counter would
+  need to be exchanged with a fixed memory location (say 0xFFF), if the
+  JUMP instruction was changed to be the opcode 0xF, then the current
+  opcode could be replaced with all ones. A STORE of the current PC to
+  0xFFF would also need to be arranged.
+  - As an added extra, you could configure the processor to wake up
+  out of the halt state in the event of an interrupt if interrupts are
+  enabled. Alternatively, this could be the only interrupt mechanism
+  allowed, which would be trivial to add.
+
 
 # References / Appendix
 
 The state-machine diagram was made using [Graphviz][], and can be viewed and
 edited immediately by copying the following text into [GraphvizOnline][].
 
+
 	digraph bcpu {
 		reset -> fetch [label="start"]
 		fetch -> execute
-		fetch -> indirect [label="flag(IND) = '1' and op < 8"]
+		fetch -> indirect [label="flag(IND) = '1'\n and op < 8"]
 		fetch -> reset  [label="flag(RST) = '1'"]
 		fetch -> halt  [label="flag(HLT) = '1'"]
 		indirect -> operand 
@@ -317,13 +373,14 @@ edited immediately by copying the following text into [GraphvizOnline][].
 		execute -> advance
 		execute -> store   [label="op = 'store'"]
 		execute -> load   [label="op = 'load'"]
+		execute -> fetch [label="(op = 'jumpz' and acc = 0)\n or op ='jump'"]
 		store -> advance
 		load -> advance
 		advance -> fetch
 		halt -> halt
 	}
 
-
+	
 For timing diagrams, use [Wavedrom][] with the following text:
 
 	{signal: [
@@ -422,7 +479,7 @@ That's all folks!
 
 [gforth]: https://www.gnu.org/software/gforth/
 [H2]: https://github.com/howerj/forth-cpu
-[Soft-Counter]: https://en.wikipedia.org/wiki/Soft_microprocessor#Core_comparison
+[Soft-Core]: https://en.wikipedia.org/wiki/Soft_microprocessor#Core_comparison
 [bit-serial CPU]: https://en.wikipedia.org/wiki/Bit-serial_architecture
 [VHDL]: https://en.wikipedia.org/wiki/VHDL
 [GHDL]: http://ghdl.free.fr/

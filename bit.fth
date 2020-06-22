@@ -100,13 +100,13 @@ FFFF tvar set
 : reset flgR   iLITERAL flags! ;
 : indirect flgInd iLITERAL flags! ;
 : direct clr flags! ;
-: inc 1 iADD ;  ( works in direct/indirect mode if address 1 = 1 )
-: nop 0 iOR ;   ( works in direct/indirect mode if address 0 = 0 )
+: inc 1 iADD ;  ( works in direct/indirect mode if address[1] = 1 )
+: nop 0 iOR ;   ( works in direct/indirect mode if address[0] = 0 )
 : branch 2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
 
-: invert indirect set iXOR ;
+: invert set iXOR ;
 
 : begin there ;
 : until ?branch ;
@@ -127,7 +127,7 @@ label entry
 	1 t,
 	2 t,
 	clr
-	indirect
+	indirect \ We assume indirect is on for all instructions
 	$800 iGET
 	$800 iSET
 

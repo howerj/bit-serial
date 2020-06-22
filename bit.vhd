@@ -3,11 +3,20 @@
 -- Repository:  https://github.com/howerj/bit-serial
 -- License:     MIT
 -- Description: An N-bit, simple and small bit serial CPU
+
 library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use std.textio.all; -- for debug only, not needed for synthesis
 
+-- The bit-serial CPU itself, the interface is bit-serial as well as the
+-- CPU itself, address and data are N bits wide. The enable lines are held
+-- high for N cycles when data is clocked in or out, and a complete read or
+-- write consists of N cycles (although those cycles may not be contiguous,
+-- it is up to the BCPU). The three enable lines are mutually exclusive,
+-- only one will be active at any time.
+--
+-- There are a few configurable items, but the defaults should work fine.
 entity bcpu is 
 	generic (
 		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false
@@ -77,13 +86,17 @@ architecture rtl of bcpu is
 	signal add1, add2, acin, ares, acout: std_ulogic; -- shared adder signals
 	signal last4, last:                   std_ulogic; -- state sequence signals
 
+	-- 'adder' implements a full adder, which is all we need to implement
+	-- N-bit addition in a bit serial architecture.
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
 		sum  <= x xor y xor cin after delay;
 		cout <= (x and y) or (cin and (x xor y)) after delay;
 	end procedure;
 
-	function bit_count(bc: in std_ulogic_vector) return natural is -- used for assertions
+	-- 'bit_count' is used for assertions and nothing else. It counts the
+	-- number of bits in a 'std_ulogic_vector'.
+	function bit_count(bc: in std_ulogic_vector) return natural is 
 		variable count: natural := 0;
 	begin
 		for index in bc'range loop
@@ -94,7 +107,12 @@ architecture rtl of bcpu is
 		return count;
 	end function;
 
-	procedure reportln is 
+	-- Obviously this does not synthesis, which is why synthesis is turned
+	-- off for the body of this function, it does make debugging much easier
+	-- though, we will be able to which instructions are executed and do so
+	-- by name. Hexadecimal would have been better than decimal, but we cannot
+	-- have everything.
+	procedure print_debug_info is 
 		function stringify(slv: in std_ulogic_vector) return string is
 		begin
 			return integer'image(to_integer(unsigned(slv)));
@@ -103,10 +121,10 @@ architecture rtl of bcpu is
 	begin
 		-- synthesis translate_off
 		if debug then
-			write(ll, stringify(c.pc) & ": ");
-			write(ll, cmd_t'image(cmd) & " ");
-			write(ll, stringify(c.op) & " ");
-			write(ll, stringify(c.acc) & " ");
+			write(ll, stringify(c.pc)    & ": ");
+			write(ll, cmd_t'image(cmd)   & " ");
+			write(ll, stringify(c.op)    & " ");
+			write(ll, stringify(c.acc)   & " ");
 			write(ll, stringify(c.flags) & " ");
 			writeline(OUTPUT, ll);
 		end if;
@@ -116,6 +134,8 @@ begin
 	assert N >= 8                      report "CPU Width too small: N >= 8"   severity failure;
 	assert not (ie = '1' and oe = '1') report "input/output at the same time" severity failure;
 	assert not (ie = '1' and ae = '1') report "input whilst changing address" severity failure;
+	assert not (oe = '1' and ae = '1') report "output whilst changing address" severity failure;
+
 	adder (add1, add2, acin, ares, acout);                 -- shared adder
 	cmd         <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 	last4       <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
@@ -123,7 +143,7 @@ begin
 
 	process (clk, rst) begin
 		if rst = '1' and asynchronous_reset then
-			c.dline <= (others => '0') after delay;
+			c.dline <= (others => '0') after delay; -- parallel reset!
 			c.state <= RESET after delay;
 		elsif rising_edge(clk) then
 			c <= f after delay;
@@ -131,7 +151,10 @@ begin
 				c.dline <= (others => '0') after delay;
 				c.state <= RESET after delay;
 			else
-				if c.state = EXECUTE and c.first then reportln; end if;
+				-- These are just assertions, they are not required for running, but
+				-- we can make sure there are no unexpected state transitions, and
+				-- report on the internal state.
+				if c.state = EXECUTE and c.first then print_debug_info; end if;
 				if c.state = RESET   and last = '1' then assert f.state = FETCH;   end if;
 				if c.state = LOAD    and last = '1' then assert f.state = ADVANCE; end if;
 				if c.state = STORE   and last = '1' then assert f.state = ADVANCE; end if;
@@ -158,16 +181,30 @@ begin
 		f       <= c after delay;
 		f.dline <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
 
+		-- Our delay line should only contain zero on one bit at a time
 		if c.first then
 			assert bit_count(c.dline) = 0 report "too many dline bits";
 		else
 			assert bit_count(c.dline) = 1 report "missing dline bit";
 		end if;
 
+		-- The processor works by using a delay line to sequence actions,
+		-- the top four bits are used for the instruction (and if the highest
+		-- bit is set indirection is _not_ allowed), with the lowest twelve
+		-- bits as an operand to use as a literal value or an address.
+		--
+		-- As such, we will want to trigger actions when processing the first
+		-- bit, the last four bits and the last bit.
+		--
 		if last = '1' then
 			f.state <= c.choice after delay;
 			f.first <= true     after delay;
 			f.last4 <= false    after delay;
+			-- This is a bit of a hack, in order to place it in its proper
+			-- place within the 'FETCH' state we would need to move the
+			-- 'indirection allowed on instruction' bit from the highest
+			-- bit to a lower bit so we can perform the state decision before
+			-- the bit is being processed.
 			if c.flags(IND) = '1' then
 				if i = '0' and c.state = FETCH then
 					f.indir <= true;
@@ -178,6 +215,11 @@ begin
 			f.last4 <= true after delay;
 		end if;
 
+		-- Each state lasts N (which defaults to 16) + 1 cycles.
+		-- Of note: we could make the FETCH state last only 4 + 1 cycles
+		-- and merge the operand fetching in FETCH (and OPERAND state) into
+		-- the 'EXECUTE' state.
+		--
 		case c.state is
 		when RESET   =>
 			f.choice <= FETCH;
@@ -191,6 +233,14 @@ begin
 				f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				f.flags <= "0" & c.flags(c.flags'high downto 1) after delay;
 			end if;
+		-- When in the running state all state transitions pass through FETCH.
+		-- FETCH does what you expect from it, it fetches the instruction. It also
+		-- partially decodes it and sets flags that the accumulator depends on.
+		-- 
+		-- What is meant by partially decoding is this; it is determined if we
+		-- should go to the INDIRECT state next or to the EXECUTE state, also
+		-- it is determined whether an I/O operation should be performed for those
+		-- instructions capable of doing I/O.
 		when FETCH   =>
 			assert not (c.flags(Z) = '1' and c.flags(Ng) = '1') report "zero and negative?";
 			if c.first then
@@ -215,7 +265,9 @@ begin
 					f.op    <= "0" & c.op (c.op'high  downto 1) after delay;
 				end if;
 			end if;
-	
+
+			-- We use the highest operand bit to determine whether an I/O operation
+			-- is taking place with iGET and iSET.
 			if c.op(c.op'high - 3) = '1' then
 				f.is_io <= true after delay;
 			else
@@ -224,6 +276,7 @@ begin
 
 			f.flags(Ng)  <= c.acc(c.acc'high) after delay;
 
+			-- NB. 'f.choice' may be overwritten for INDIRECT
 			   if c.flags(HLT) = '1' then
 				f.choice <= HALT after delay;
 			elsif c.flags(R) = '1' then
@@ -231,7 +284,10 @@ begin
 			else
 				f.choice <= EXECUTE after delay;
 			end if;
-		-- NB. 'f.choice' may be overwritten for INDIRECT
+		-- INDIRECT is only used when we have c.flags(IND) set and the
+		-- instruction allows for indirection (ie. All those instructions in which
+		-- the top bit is not set). The indirection add 2*(N+1) cycles to
+		-- the instruction so is quite expensive.
 		when INDIRECT =>
 			assert c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0' severity error;
 			f.choice <= EXECUTE after delay;
@@ -244,6 +300,8 @@ begin
 				f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
 				f.choice <= OPERAND after delay;
 			end if;
+		-- OPERAND fetches the operand *again*, this time using the operand
+		-- acquired in EXECUTE, the address being set in the previous INDIRECT state.
 		when OPERAND =>
 			f.choice <= EXECUTE after delay;
 			if c.first then
@@ -253,6 +311,9 @@ begin
 				ie      <= '1' after delay;
 				f.op    <= i & c.op(c.op'high downto 1) after delay;
 			end if;
+		-- The EXECUTE state implements the ALU. It is the most seemingly the
+		-- most complex state, but it is not (FETCH is more difficult to
+		-- understand).
 		when EXECUTE =>
 			f.choice     <= ADVANCE after delay;
 			if c.first then
@@ -280,6 +341,10 @@ begin
 					acin  <= c.flags(Cy) after delay;
 					f.acc(f.acc'high) <= ares after delay;
 					f.flags(Cy) <= acout after delay;
+				-- A barrel shifter is usually quite an expensive piece of hardware,
+				-- but it ends up being quite cheap for obvious reasons. If we really
+				-- needed to we could dispense with the right shift, we could mask off
+				-- low bits and rotate (either way) to emulate it.
 				when iLSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
@@ -320,6 +385,9 @@ begin
 					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
 					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
 				when iUNUSED =>
+				-- We could use this if we need to extend the instruction set
+				-- for any reason. I cannot think of a good one that justifies the
+				-- cost of a new instruction. So this will remain blank for now.
 				when iJUMP =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
@@ -359,7 +427,7 @@ begin
 						if last = '1' then
 							a <= '1' after delay;
 						end if;
-						f.op   <=     "0" & c.op(c.op'high downto 1) after delay;
+						f.op     <= "0" & c.op(c.op'high downto 1) after delay;
 						f.choice <= LOAD after delay;
 					else
 						if c.op(0) = '0' then
@@ -372,6 +440,9 @@ begin
 					end if;
 				end case;
 			end if;
+		-- Unfortunately we cannot perform a load or a store whilst we are
+		-- performing an EXECUTE, so we require STORE and LOAD states to do
+		-- more work after a LOAD or STORE instruction.
 		when STORE   =>
 			f.choice <= ADVANCE after delay;
 			if c.first then
@@ -391,6 +462,9 @@ begin
 				ie    <= '1' after delay;
 				f.acc <= i & c.acc(c.acc'high downto 1) after delay;
 			end if;
+		-- ADVANCE reuses our adder in iADD to add one to the program counter
+		-- this state should not be reached from iJUMPZ or iJUMP, or when
+		-- performing an iSET on the program counter.
 		when ADVANCE =>
 			f.choice <= FETCH after delay;
 			if c.first then

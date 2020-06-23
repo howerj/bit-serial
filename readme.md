@@ -339,6 +339,8 @@ assembler.
 * Two of these cores could be hooked up to one Dual Port block RAM. This is
   another intention and goal of the device, this allows one FPGA based
   application (say a text terminal) to share memory with one BCPU core.
+* A bit-parallel (or...a normal) version of this CPU could be made if software
+  compatibility is desired but the design proves to be too slow.
 * Variable cycle states should have been used, FETCH could be 4/5 cycles,
   INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
   EXECUTE 16/17 along with the other instructions.

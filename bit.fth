@@ -50,7 +50,7 @@ size =cell - tep !
 
 : tvar tend t! create tend , -2 tep +! does> @ ;
 : tcnst tend t! create tend @ , -2 tep +! does> @ ;
-: label create there , does> @ ;
+: label: create there , does> @ ;
 
 : iOR      0000 or t, ;
 : iAND     1000 or t, ;
@@ -80,19 +80,10 @@ size =cell - tep !
 80 constant flgHlt
 
 0 tvar cnt
-FFFF tvar set
 000F tvar nib0
 2048 tvar uartWrite
 2000 tvar _uwrite
 
-0 tvar r0
-0 tvar r1
-0 tvar r2
-0 tvar sp
-0 tvar rp
-
-: save r0 iSTORE-C ;
-: load r0 iLOAD-C ;
 : flags? 1 iGET ;
 : flags! 1 iSET ;
 : clr 0 iLITERAL ;
@@ -105,8 +96,6 @@ FFFF tvar set
 : branch 2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
-
-: invert set iXOR ;
 
 : begin there ;
 : until ?branch ;
@@ -122,7 +111,7 @@ FFFF tvar set
 0 tvar _emit ( TODO: wait if TX Queue full )
 : emit _emit iSTORE-C _uwrite iLOAD-C _emit 2/ iOR 801 iSET ; 
 
-label entry
+label: entry
 	0 t,
 	1 t,
 	2 t,
@@ -142,9 +131,124 @@ label entry
 		zero?
 	until
 
-label end
+label: end
 	\ reset
 	halt
+
+\ TODO: Implement a virtual machine for a token thread stack machine, see
+\ <https://en.wikipedia.org/wiki/Threaded_code#Token_threading> for more
+\ information. It is this machine that we will target. We will have to put
+\ all the words we have defined here into the assembly word-set and define
+\ an entirely new of words. We will want to keep this virtual machine as
+\ compact as possible, perhaps under 512 bytes, including return and program
+\ stacks! That might be a bit of a stretch however.
+
+\ Memory locations 0 and 1 should contain 0 and 1 respectively.
+$200 tvar vpc \ entry point of virtual machine program
+$200 tvar sp  \ stack pointer
+$180 tvar rp  \ return stack pointer
+0 tvar r0     \ working pointer
+0 tvar tos    \ top of stack
+0 tvar rtos   \ top of return stack
+FFFF tvar set \ all bits set
+FF tvar half
+
+: fdefault flgInd iLITERAL flags! ;
+: spush sp iLOAD-C set iADD fdefault sp iSTORE-C tos iLOAD-C sp iSTORE ;
+: spop sp iLOAD-C 1 iADD sp iSTORE-C sp iLOAD tos iSTORE-C ;
+\ TODO return stack needs to grow upwards...
+: rpush rp iLOAD-C set iADD fdefault rp iSTORE-C rtos iLOAD-C rp iSTORE ;
+: rpop rp iLOAD-C 1 iADD rp iSTORE-C rp iLOAD rtos iSTORE-C ;
+: opcode: there . label: ; \ TODO: Assert opcode address <256
+
+\ TODO: Fix vpc load/stores so they operate on bytes!
+label: start
+	$200 iLITERAL
+	vpc iSTORE-C
+label: vm
+	fdefault
+	vpc iLOAD-C
+	r0 iSTORE-C
+	1 iADD
+	vpc iSTORE-C
+	r0 iLOAD-C 1 iAND if
+		r0 iLOAD
+		half iRSHIFT	
+	else
+		r0 iLOAD
+		half iAND
+	then
+	\ TODO Add offset into thread/Or shift left
+	0 iSET
+
+: next vm iJUMP ; \ TODO 2/?
+
+opcode: opPushByte \ Op8
+	spush vpc iLOAD tos iSTORE-C
+	vpc iLOAD-C 1 iADD vpc iSTORE-C
+	next
+opcode: opPushWord \ Op16
+	spush vpc iLOAD tos iSTORE-C
+	vpc iLOAD-C 2 iADD
+	next
+opcode: opReturn
+	rtos iLOAD-C r0 iSTORE-C rpop 0 iSET
+opcode: opCall     \ Op16
+	rpush 0 iGET rtos iSTORE-C
+	vpc iLOAD
+	0 iSET
+opcode: opJump     \ Op16
+	vpc iLOAD
+	0 iSET
+opcode: opJumpZero \ Op16
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iLOAD-C if vpc iLOAD 0 iSET then 
+	next
+opcode: opAdd
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iADD tos iSTORE-C
+	next
+opcode: opAddWithCarry
+	tos iLOAD-C r0 iLOAD-C spop
+	r0 iADD tos iSTORE-C spush
+	next
+opcode: opSubtract
+	tos iLOAD-C r0 iSTORE-C spop
+	set iXOR 1 iADD  tos iSTORE-C
+	next
+opcode: opOr
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iOR tos iSTORE-C
+	next
+opcode: opXor
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iXOR tos iSTORE-C
+	next
+opcode: opAnd
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iAND tos iSTORE-C
+	next
+opcode: opInvert
+	tos iLOAD-C set iXOR tos iSTORE-C
+	next
+opcode: opLshift
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iLSHIFT tos iSTORE-C
+	next
+opcode: opRshift
+	tos iLOAD-C r0 iSTORE-C spop
+	r0 iRSHIFT tos iSTORE-C
+	next
+opcode: opLoad
+	tos iLOAD tos iSTORE-C
+	next
+opcode: opStore
+	tos iLOAD-C r0 iSTORE-C spop
+	next
+opcode: opHalt
+	halt
+opcode: opReset
+	reset
 
 save-hex bit.hex
 

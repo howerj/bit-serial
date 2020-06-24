@@ -182,6 +182,10 @@ however, you will need to be far more aware of timing of signals and their
 enable lines. Much like the processor, a single bit bus in conjunction with an
 enable is used to communicate with the outside world.
 
+The internal state of the CPU is minimal, to make a working system the memory
+and I/O controller will need (shift) registers to store the address and 
+input/output.
+
 # Peripherals
 
 The system has a minimal set of peripherals; a bank of switches with LEDs next
@@ -336,11 +340,18 @@ assembler.
   interface. The reason the processor is difficult to program for is; a lack
   of a built in call/return mechanism and instructions that require setting
   mode flags.
+* Ideas for a completely different CPU architecture that is also bit serial
+  include; a nibble or byte oriented CPU (with 8 or 16 bit operands), the
+  former would allow for particularly dense code, potentially, or implementing
+  a full stack machine instead of an accumulator machine. Stack machines are
+  much easier to use and to compile to.
 * Two of these cores could be hooked up to one Dual Port block RAM. This is
   another intention and goal of the device, this allows one FPGA based
   application (say a text terminal) to share memory with one BCPU core.
 * A bit-parallel (or...a normal) version of this CPU could be made if software
-  compatibility is desired but the design proves to be too slow.
+  compatibility is desired but the design proves to be too slow, this would of
+  course be bigger, and some instructions may be difficult to implement (the
+  shift/rotates).
 * Variable cycle states should have been used, FETCH could be 4/5 cycles,
   INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
   EXECUTE 16/17 along with the other instructions.
@@ -356,7 +367,6 @@ assembler.
   out of the halt state in the event of an interrupt if interrupts are
   enabled. Alternatively, this could be the only interrupt mechanism
   allowed, which would be trivial to add.
-
 
 # References / Appendix
 

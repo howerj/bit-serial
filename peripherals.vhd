@@ -133,26 +133,26 @@ begin
 	process (c, i, a, oe, ie, ae, dout, io, write, sw, rx, io_addr,
 		rx_fifo_data, rx_fifo_empty, rx_fifo_full, tx_fifo_empty, tx_fifo_full)
 	begin
-		f    <= c after g.delay;
-		f.r_o  <= dout after g.delay;
-		f.r_ie <= ie after g.delay;
-		dre  <= '1' after g.delay;
-		dwe  <= '0' after g.delay;
-		tx_fifo_we <= '0' after g.delay; 
-		rx_fifo_re <= '0' after g.delay;
-		clock_reg_tx_we <= '0' after g.delay;
-		clock_reg_rx_we <= '0' after g.delay;
-		control_reg_we <= '0' after g.delay;
+		f               <= c    after g.delay;
+		f.r_o           <= dout after g.delay;
+		f.r_ie          <= ie   after g.delay;
+		dre             <= '1'  after g.delay;
+		dwe             <= '0'  after g.delay;
+		tx_fifo_we      <= '0'  after g.delay; 
+		rx_fifo_re      <= '0'  after g.delay;
+		clock_reg_tx_we <= '0'  after g.delay;
+		clock_reg_rx_we <= '0'  after g.delay;
+		control_reg_we  <= '0'  after g.delay;
 
-		if ae = '1' then f.r_a <= a      & c.r_a(c.r_a'high downto 1) after g.delay; end if;
+		if ae = '1' then f.r_a <= a        & c.r_a(c.r_a'high downto 1) after g.delay; end if;
 		if oe = '1' then f.r_o <= c.r_o(0) & c.r_o(c.r_o'high downto 1) after g.delay; end if;
-		if ie = '1' then f.r_i <= i      & c.r_i(c.r_i'high downto 1) after g.delay; end if;
+		if ie = '1' then f.r_i <= i        & c.r_i(c.r_i'high downto 1) after g.delay; end if;
 
 		if oe = '0' and ae = '0' then
 			if io = false then
 				dre <= '1' after g.delay;
 			else
-				f.r_o           <= (others => '0') after g.delay;
+				f.r_o <= (others => '0') after g.delay;
 				case io_addr is
 				when "000" => f.r_o(sw'range) <= sw after g.delay;
 				when "001" =>
@@ -182,7 +182,7 @@ begin
 						rx_fifo_re <= c.r_i(10) after g.delay;
 				when "010" => clock_reg_tx_we <= '1' after g.delay;
 				when "011" => clock_reg_rx_we <= '1' after g.delay;
-				when "100" => control_reg_we <= '1' after g.delay;
+				when "100" => control_reg_we  <= '1' after g.delay;
 				when "101" =>
 				when "110" =>
 				when "111" =>

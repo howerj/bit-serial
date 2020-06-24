@@ -37,8 +37,7 @@ size =cell - tep !
 : talign there 1 and tdp +! ;
 : tc, there tc! 1 tdp +! ;
 : t, there t! 2 tdp +! ;
-: $literal [char] " word count dup tc, 0 ?do
-	count tc, loop drop talign ;
+: $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
 : tallot tdp +! ;
 : org tdp ! ;
 
@@ -156,12 +155,16 @@ FF tvar half
 : fdefault flgInd iLITERAL flags! ;
 : spush sp iLOAD-C set iADD fdefault sp iSTORE-C tos iLOAD-C sp iSTORE ;
 : spop sp iLOAD-C 1 iADD sp iSTORE-C sp iLOAD tos iSTORE-C ;
-\ TODO return stack needs to grow upwards...
-: rpush rp iLOAD-C set iADD fdefault rp iSTORE-C rtos iLOAD-C rp iSTORE ;
-: rpop rp iLOAD-C 1 iADD rp iSTORE-C rp iLOAD rtos iSTORE-C ;
-: opcode: there . label: ; \ TODO: Assert opcode address <256
+: rpush rp iLOAD-C 1 iADD fdefault rp iSTORE-C rtos iLOAD-C rp iSTORE ;
+: rpop rp iLOAD-C set iADD rp iSTORE-C rp iLOAD rtos iSTORE-C ;
+\ : opcode: there . label: ; 
+\ TODO: Assert opcode address <256, also make opcode
+: opcode: create there dup . , does> @ 2/ tc, ;
 
-\ TODO: Fix vpc load/stores so they operate on bytes!
+\ TODO: Implement direct or indirect threading instead?
+\       - First word should be opcode, with some special values, such as
+\	- '1' meaning 'nest'/'docol'
+\ TODO: Fix vpc load/stores so they operate on bytes?
 label: start
 	$200 iLITERAL
 	vpc iSTORE-C
@@ -184,10 +187,12 @@ label: vm
 : next vm iJUMP ; \ TODO 2/?
 
 opcode: opPushByte \ Op8
+	\ TODO: Load high/low bytes correct
 	spush vpc iLOAD tos iSTORE-C
 	vpc iLOAD-C 1 iADD vpc iSTORE-C
 	next
 opcode: opPushWord \ Op16
+	\ TODO: Load high/low bytes correct
 	spush vpc iLOAD tos iSTORE-C
 	vpc iLOAD-C 2 iADD
 	next
@@ -249,6 +254,13 @@ opcode: opHalt
 	halt
 opcode: opReset
 	reset
+\ TODO: Add >r r> rp sp? jump-relative?
+
+
+\ TODO: Redefine -- if, else, then, begin, until, ... in a new vocabulary
+
+200 tdp !
+	opHalt
 
 save-hex bit.hex
 

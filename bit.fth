@@ -116,6 +116,7 @@ label: entry
 	2 t,
 	clr
 	indirect \ We assume indirect is on for all instructions
+\ ( 
 	$800 iGET
 	$800 iSET
 
@@ -132,7 +133,7 @@ label: entry
 
 label: end
 	\ reset
-	halt
+	halt )
 
 \ TODO: Implement a virtual machine for a token thread stack machine, see
 \ <https://en.wikipedia.org/wiki/Threaded_code#Token_threading> for more
@@ -143,124 +144,162 @@ label: end
 \ stacks! That might be a bit of a stretch however.
 
 \ Memory locations 0 and 1 should contain 0 and 1 respectively.
-$200 tvar vpc \ entry point of virtual machine program
+$200 tvar ip  \ entry point of virtual machine program
 $200 tvar sp  \ stack pointer
 $180 tvar rp  \ return stack pointer
-0 tvar r0     \ working pointer
+0 tvar w      \ working pointer
 0 tvar tos    \ top of stack
-0 tvar rtos   \ top of return stack
+0 tvar t      \ temporary register
 FFFF tvar set \ all bits set
-FF tvar half
+FF tvar half  \ lowest set
 
 : fdefault flgInd iLITERAL flags! ;
-: spush sp iLOAD-C set iADD fdefault sp iSTORE-C tos iLOAD-C sp iSTORE ;
-: spop sp iLOAD-C 1 iADD sp iSTORE-C sp iLOAD tos iSTORE-C ;
-: rpush rp iLOAD-C 1 iADD fdefault rp iSTORE-C rtos iLOAD-C rp iSTORE ;
-: rpop rp iLOAD-C set iADD rp iSTORE-C rp iLOAD rtos iSTORE-C ;
 \ : opcode: there . label: ; 
-\ TODO: Assert opcode address <256, also make opcode
-: opcode: create there dup . , does> @ 2/ tc, ;
+: opcode: create there dup . , does> @ , ;
+: vcell 1 ;
+: -vcell set ;
+: pc! 0 iSET ; ( acc -> pc )
+: --sp sp iLOAD-C  vcell iADD sp iSTORE-C ;
+: ++sp sp iLOAD-C -vcell iADD sp iSTORE-C fdefault ;
+: --rp rp iLOAD-C -vcell iADD rp iSTORE-C fdefault ;
+: ++rp rp iLOAD-C  vcell iADD rp iSTORE-C ;	
 
-\ TODO: Implement direct or indirect threading instead?
-\       - First word should be opcode, with some special values, such as
-\	- '1' meaning 'nest'/'docol'
-\ TODO: Fix vpc load/stores so they operate on bytes?
+
 label: start
 	$200 iLITERAL
-	vpc iSTORE-C
-label: vm
+	ip iSTORE-C
+label: next
 	fdefault
-	vpc iLOAD-C
-	r0 iSTORE-C
-	1 iADD
-	vpc iSTORE-C
-	r0 iLOAD-C 1 iAND if
-		r0 iLOAD
-		half iRSHIFT	
-	else
-		r0 iLOAD
-		half iAND
-	then
-	\ TODO Add offset into thread/Or shift left
-	0 iSET
-
-: next vm iJUMP ; \ TODO 2/?
-
-opcode: opPushByte \ Op8
-	\ TODO: Load high/low bytes correct
-	spush vpc iLOAD tos iSTORE-C
-	vpc iLOAD-C 1 iADD vpc iSTORE-C
-	next
-opcode: opPushWord \ Op16
-	\ TODO: Load high/low bytes correct
-	spush vpc iLOAD tos iSTORE-C
-	vpc iLOAD-C 2 iADD
-	next
-opcode: opReturn
-	rtos iLOAD-C r0 iSTORE-C rpop 0 iSET
-opcode: opCall     \ Op16
-	rpush 0 iGET rtos iSTORE-C
-	vpc iLOAD
-	0 iSET
-opcode: opJump     \ Op16
-	vpc iLOAD
-	0 iSET
-opcode: opJumpZero \ Op16
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iLOAD-C if vpc iLOAD 0 iSET then 
-	next
-opcode: opAdd
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iADD tos iSTORE-C
-	next
-opcode: opAddWithCarry
-	tos iLOAD-C r0 iLOAD-C spop
-	r0 iADD tos iSTORE-C spush
-	next
-opcode: opSubtract
-	tos iLOAD-C r0 iSTORE-C spop
-	set iXOR 1 iADD  tos iSTORE-C
-	next
-opcode: opOr
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iOR tos iSTORE-C
-	next
-opcode: opXor
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iXOR tos iSTORE-C
-	next
-opcode: opAnd
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iAND tos iSTORE-C
-	next
-opcode: opInvert
-	tos iLOAD-C set iXOR tos iSTORE-C
-	next
-opcode: opLshift
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iLSHIFT tos iSTORE-C
-	next
-opcode: opRshift
-	tos iLOAD-C r0 iSTORE-C spop
-	r0 iRSHIFT tos iSTORE-C
-	next
-opcode: opLoad
-	tos iLOAD tos iSTORE-C
-	next
-opcode: opStore
-	tos iLOAD-C r0 iSTORE-C spop
-	next
-opcode: opHalt
+	\ *ip++ -> w
+	ip iLOAD
+	w iSTORE-C
+	ip iLOAD-C
+	vcell iADD
+	ip iSTORE-C
+	\ jump **w++
+	w iLOAD-C
+	t iSTORE-C
+	vcell iADD
+	w iSTORE-C
+	t iLOAD
+	t iSTORE-C
+	t iLOAD
+	pc!
+	
+label: nest
+	\ ip -> *rp++
+	ip iLOAD-C
+	rp iSTORE
+	rp iLOAD-C
+	vcell iADD
+	rp iSTORE-C
+	\ w -> ip
+	w iLOAD-C
+	ip iSTORE-C
+	next iJUMP
+label: unnest
+	\ *--rp -> ip
+	rp iLOAD-C
+	-vcell iADD
+	rp iSTORE-C
+	fdefault
+	rp iLOAD
+	ip iSTORE-C
+	next iJUMP
+label: skip
+	\ jump *(*++ip)
+	ip iLOAD-C
+	vcell iADD
+	ip iSTORE-C
+	ip iLOAD
+	pc!
+label: opPush
+	++sp
+	tos iLOAD-C
+	sp iSTORE
+	
+	ip iLOAD-C
+	vcell iADD
+	t iSTORE-C
+	t iLOAD
+	
+	tos iSTORE-C
+	skip iJUMP
+label: opJump
+	ip iLOAD-C vcell iADD ip iSTORE-C
+	ip iLOAD
+	pc!
+label: opJumpZ
+	tos iLOAD-C
+	t iSTORE-C
+	--sp
+	sp iLOAD
+	tos iSTORE
+	t iLOAD-C
+	opJump iJUMPZ
+	ip iLOAD-C vcell iADD ip iSTORE-C
+	skip iJUMP
+label: opHalt
 	halt
-opcode: opReset
+label: opBye
 	reset
-\ TODO: Add >r r> rp sp? jump-relative?
+label: opAnd
+	sp iLOAD
+	tos iAND
+	tos iSTORE-C
+	--sp
+	skip iJUMP
+label: opOr
+	sp iLOAD
+	tos iOR
+	tos iSTORE-C
+	--sp
+	skip iJUMP
+label: opXor
+	sp iLOAD
+	tos iOR
+	tos iSTORE-C
+	--sp
+	skip iJUMP
+label: opInvert
+	tos iLOAD-C
+	set iXOR
+	tos iSTORE-C
+	skip iJUMP
+label: opAdd
+	sp iLOAD
+	tos iADD
+	tos iSTORE-C
+	fdefault
+	--sp
+	skip iJUMP
+label: opLOAD
+	tos iLOAD
+	skip iJUMP
+label: opSTORE
+	sp iLOAD
+	tos iSTORE
+	--sp
+	sp iLOAD
+	tos iSTORE-C
+	--sp
+	skip iJUMP
+\ Also need >r r> r@ r sp lshift rshift 1+ 1-
+
+label: i_program
+	opHalt t,
+
+$200 tdp !
+	i_program t,
+
+
+
+: lit opPush t, t, ;
 
 
 \ TODO: Redefine -- if, else, then, begin, until, ... in a new vocabulary
-
-200 tdp !
-	opHalt
+\ 200 tdp !
+\	opHalt
 
 save-hex bit.hex
 

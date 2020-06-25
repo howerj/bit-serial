@@ -9,7 +9,7 @@ BAUD?=115200
 all: bit simulation
 
 run: bit bit.hex
-	./bit - bit.hex
+	./bit bit.hex
 
 talk:
 	picocom --omap delbs -e b -b ${BAUD} ${USB}

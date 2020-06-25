@@ -20,7 +20,7 @@
 
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
-typedef struct { FILE *in, *out; mw_t ch, leds, switches; } bcpu_io_t;
+typedef struct { FILE *in, *out, *trace; mw_t ch, leds, switches; int rheader; } bcpu_io_t;
 enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 
 static void die(const char *fmt, ...) {
@@ -34,23 +34,32 @@ static void die(const char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
-static inline int trace(bcpu_t *b, bcpu_io_t *io, FILE *tracer, 
+static inline int trace(bcpu_t *b, bcpu_io_t *io,
 		unsigned cycles, const mw_t pc, const mw_t flg, 
 		const mw_t acc, const mw_t op1, const mw_t cmd) {
 	assert(b);
 	assert(io);
-	if (!tracer)
+	if (!(io->trace))
 		return 0;
 	static const char *commands[] = { 
-		"or",     "and",     "xor",     "add",  
-		"lshift", "rshift",  "load",    "store",
-		"load-c", "store-c", "literal", "unused",
-		"jump",   "jumpz",   "set",     "get",
+		"or     ", "and    ", "xor    ", "add    ",  
+		"lshift ", "rshift ", "load   ", "store  ",
+		"load-c ", "store-c", "literal", "unused ",
+		"jump   ", "jumpz  ", "set    ", "get    ",
 	};
 	assert(cmd < (sizeof(commands)/sizeof(commands[0])));
 	char cbuf[9] = { 0 };
-	snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]);
-	return fprintf(tracer, "%4x: %4x %2x:%s %4x %4x %4x %4x\n", 
+	if ((io->rheader == 0 && cycles == 0) || (io->rheader && ((cycles % io->rheader) == 0))) {
+		if (fprintf(io->trace, ".-------+------+-----------+------+------+------+------.\n") < 0)
+			return -1;
+		if (fprintf(io->trace, "| cycl  |  pc  |  command  |  acc |  op1 |  flg | leds |\n") < 0)
+			return -1;
+		if (fprintf(io->trace, ".-------+------+-----------+------+------+------+------.\n") < 0)
+			return -1;
+	}
+	if (snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]) < 0)
+		return -1;
+	return fprintf(io->trace, "| %5x | %4x | %1x:%s | %4x | %4x | %4x | %4x |\n", 
 			cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
 			(unsigned)acc, (unsigned)op1, (unsigned)flg, 
 			(unsigned)io->leds);
@@ -97,40 +106,39 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr) {
 	assert(b);
 	assert(io);
-	if (is_io) {
-		switch (addr & 0x7) {
-		case 0: return io->switches;
-		case 1: return (1u << 11u) | (io->ch & 0xFF);
-		}
-		return 0;
+	if (!is_io)
+		return b->m[addr % MSIZE];
+	switch (addr & 0x7) {
+	case 0: return io->switches;
+	case 1: return (1u << 11u) | (io->ch & 0xFF);
 	}
-	return b->m[addr % MSIZE];
+	return 0;
 }
 
 static inline void bstore(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr, mw_t val) {
 	assert(b);
 	assert(io);
-	if (is_io) {
-		switch (addr & 0x7) {
-		case 0: io->leds = val; break;
-		case 1: 
-			if (val & (1u << 13)) {
-				fputc(val & 0xFFu, io->out);
-				fflush(io->out);
-			}
-			if (val & (1u << 10))
-				io->ch = fgetc(io->in);
-			break;
-		case 2: /* TX control */ break;
-		case 3: /* RX control */ break;
-		case 4: /* UART control */ break;
-		}
-	} else {
+	if (!is_io) {
 		b->m[addr % MSIZE] = val;
+		return;
+	}
+	switch (addr & 0x7) {
+	case 0: io->leds = val; break;
+	case 1: 
+		if (val & (1u << 13)) {
+			fputc(val & 0xFFu, io->out);
+			fflush(io->out);
+		}
+		if (val & (1u << 10))
+			io->ch = fgetc(io->in);
+		break;
+	case 2: /* TX control */ break;
+	case 3: /* RX control */ break;
+	case 4: /* UART control */ break;
 	}
 }
 
-static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
+static int bcpu(bcpu_t *b, bcpu_io_t *io, const unsigned cycles) {
 	assert(b);
 	assert(io);
 	int r = 0;
@@ -143,7 +151,7 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, FILE *tracer, const unsigned cycles) {
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 		const int rot    = !!(flg & (1u << fROT));
 		if (CONFIG_TRACER_ON)
-			trace(b, io, tracer, count, pc, flg, acc, op1, cmd);
+			trace(b, io, count, pc, flg, acc, op1, cmd);
 		if (flg & (1u << fHLT)) /* HALT */
 			goto halt;
 		if (flg & (1u << fR)) { /* RESET */
@@ -227,27 +235,40 @@ static FILE *fopen_or_die(const char *file, const char *mode) {
 }
 
 int main(int argc, char **argv) {
-	int cycles = 0x1000;
+	int cycles = 0x1000, i = 0;
 	static bcpu_t b = { 0, 0, 0, { 0 } };
-	bcpu_io_t io = { .in = stdin, .out = stdout };
-	FILE *file = stdin, *trace = stderr, *hex = NULL;
-	if (argc < 2)
-		die("usage: %s -[tsf] input.hex? out.hex?", argv[0]);
-	if (argc >= 3)
-		file = fopen_or_die(argv[2], "rb");
-	if (argc >= 4)
-		hex     = fopen_or_die(argv[3], "wb");
-	for (size_t i = 0; argv[1][i]; i++)
-		switch (argv[1][i]) {
-		case '-':                   break;
-		case 't': trace   = stderr; break;
-		case 's': trace   = NULL;   break;
-		case 'f': cycles  = 0;      break;
-		default:  die("invalid option -- %c", argv[1][i]);
-		}
+	bcpu_io_t io = { .in = stdin, .out = stdout, .trace = stderr, };
+	FILE *file = stdin, *hex = NULL;
+	for (i = 1; i < argc; i++) {
+		if (argv[i][0] != '-')
+			break;
+		for (int j = 1; argv[i][j]; j++)
+			switch (argv[i][j]) {
+			case '-': i++; goto done;
+			case 'c':
+				  if (++i >= argc)
+					  die("'c' option requires numeric argument");
+				  cycles = atoi(argv[i]);
+				  goto fin;
+			case 'h': return printf("usage: %s -[tsfe] [-c cycles] input.hex? out.hex?", argv[0]), 0;
+			case 'e': io.rheader = 32;   break;
+			case 's': io.trace = NULL;   break;
+			case 't': io.trace = stderr; break;
+			default:
+				  die("invalid option -- %c", argv[i][j]);
+			}
+		fin:
+			;
+	}
+done:
+
+	if (i < argc)
+		file = fopen_or_die(argv[i++], "rb");
+	if (i < argc)
+		hex  = fopen_or_die(argv[i++], "wb");
 	if (load(&b, file) < 0)
 		die("loading hex file failed");
-	if (bcpu(&b, &io, trace, cycles) < 0)
+	if (bcpu(&b, &io, cycles) < 0)
 		die("running failed");
 	if (hex && save(&b, hex) < 0)
 		die("saving file failed");

@@ -2,9 +2,7 @@
 -- Author:      Richard James Howe
 -- Repository:  https://github.com/howerj/bit-serial
 -- License:     MIT
--- Description: Test bench for top level entity, this
--- test bench just exercises the bit-serial CPU with a
--- test program.
+-- Description: Test bench for top level entity
 
 library ieee, work, std;
 use ieee.std_logic_1164.all;
@@ -17,9 +15,9 @@ end tb;
 architecture testing of tb is
 	constant g: common_generics           := default_settings;
 	constant clock_period:       time     := 1000 ms / g.clock_frequency;
-	constant clocks:             integer  := 20000;
+	constant clocks:             integer  := 128*6*16; -- TODO: load this from configuration file.
 	constant N:                  positive := 16;
-	constant debug:              boolean  := true;
+	constant debug:              natural  := 1;
 
 	signal ld: std_ulogic_vector(7 downto 0) := (others => '0');
 	signal sw: std_ulogic_vector(7 downto 0) := x"AA";

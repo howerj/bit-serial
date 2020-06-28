@@ -14,7 +14,7 @@ entity top is
 		g: common_generics  := default_settings;
 		file_name: string   := "bit.hex";
 		N:         positive := 16;
-		debug:     boolean  := false -- will not synthesize if true
+		debug:     natural  := 0 -- will not synthesize if greater than zero (debug off)
 	);
 	port (
 		clk:         in std_ulogic;

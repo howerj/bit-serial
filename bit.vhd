@@ -24,7 +24,8 @@ entity bcpu is
 		N:                  positive   := 16;     -- size the CPU, minimum is 8
 		parity:             std_ulogic := '0';    -- set parity (even/odd) of parity flag
 		jumpz:              std_ulogic := '1';    -- jump on zero = '1', jump on non-zero = '0'
-		debug:              boolean    := false); -- if true, debug statements will be printed
+		indirection:        boolean    := true;   -- if true, indirection is on instruction is turned on.
+		debug:              natural    := 0);     -- debug level, 0 = off
 	port (
 		clk, rst:       in std_ulogic;
 		i:              in std_ulogic;
@@ -120,13 +121,20 @@ architecture rtl of bcpu is
 		variable ll: line;
 	begin
 		-- synthesis translate_off
-		if debug then
-			write(ll, stringify(c.pc)    & ": ");
-			write(ll, cmd_t'image(cmd)   & " ");
-			write(ll, stringify(c.op)    & " ");
-			write(ll, stringify(c.acc)   & " ");
-			write(ll, stringify(c.flags) & " ");
-			writeline(OUTPUT, ll);
+		if debug > 0 then
+			if c.state = EXECUTE and c.first then
+				write(ll, stringify(c.pc)    & ": ");
+				write(ll, cmd_t'image(cmd)   & " ");
+				write(ll, stringify(c.acc)   & " ");
+				write(ll, stringify(c.op)    & " ");
+				write(ll, stringify(c.flags) & " ");
+				writeline(OUTPUT, ll);
+			end if;
+			if debug > 1 and last = '1' then
+				write(ll, state_t'image(c.state) & " => ");
+				write(ll, state_t'image(f.state));
+				writeline(OUTPUT, ll);
+			end if;
 		end if;
 		-- synthesis translate_on
 	end procedure;
@@ -154,7 +162,7 @@ begin
 				-- These are just assertions, they are not required for running, but
 				-- we can make sure there are no unexpected state transitions, and
 				-- report on the internal state.
-				if c.state = EXECUTE and c.first then print_debug_info; end if;
+				print_debug_info;
 				if c.state = RESET   and last = '1' then assert f.state = FETCH;   end if;
 				if c.state = LOAD    and last = '1' then assert f.state = ADVANCE; end if;
 				if c.state = STORE   and last = '1' then assert f.state = ADVANCE; end if;
@@ -205,7 +213,7 @@ begin
 			-- 'indirection allowed on instruction' bit from the highest
 			-- bit to a lower bit so we can perform the state decision before
 			-- the bit is being processed.
-			if c.flags(IND) = '1' then
+			if c.flags(IND) = '1' and indirection then
 				if i = '0' and c.state = FETCH then
 					f.indir <= true;
 					f.state <= INDIRECT; -- Override FETCH Choice!
@@ -242,7 +250,6 @@ begin
 		-- it is determined whether an I/O operation should be performed for those
 		-- instructions capable of doing I/O.
 		when FETCH   =>
-			assert not (c.flags(Z) = '1' and c.flags(Ng) = '1') report "zero and negative?";
 			if c.first then
 				f.dline(0)   <= '1'    after delay;
 				f.first      <= false  after delay;
@@ -315,10 +322,12 @@ begin
 		-- most complex state, but it is not (FETCH is more difficult to
 		-- understand).
 		when EXECUTE =>
+			assert not (c.flags(Z) = '1' and c.flags(Ng) = '1') report "zero and negative?";
 			f.choice     <= ADVANCE after delay;
 			if c.first then
 				f.dline(0)  <= '1'   after delay;
 				f.first     <= false after delay;
+				f.tcarry    <= '1'   after delay;
 			else
 				case cmd is -- ALU
 				when iOR =>
@@ -413,8 +422,10 @@ begin
 						f.choice <= STORE after delay;
 					else
 						if c.op(0) = '0' then
+							-- NB. We could set the address directly here and
+							-- go to FETCH but that costs us too much time and gates.
 							f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
-							f.choice <= FETCH after delay;
+							f.tcarry  <= '0' after delay;
 						else
 							f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
 						end if;
@@ -470,12 +481,11 @@ begin
 			if c.first then
 				f.dline(0) <= '1'   after delay;
 				f.first    <= false after delay;
-				f.tcarry   <= '0'   after delay;
 			else
 				f.pc <= "0" & c.pc(c.pc'high downto 1) after delay;
-				add1 <=    c.pc(0) after delay;
-				add2 <= c.dline(0) after delay;
-				acin <=   c.tcarry after delay;
+				add1 <= c.pc(0)  after delay;
+				add2 <= '0'      after delay;
+				acin <= c.tcarry after delay;
 				f.pc(f.pc'high) <= ares  after delay;
 				a               <= ares  after delay;
 				f.tcarry        <= acout after delay;

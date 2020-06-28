@@ -78,11 +78,6 @@ size =cell - tep !
 40 constant flgInd
 80 constant flgHlt
 
-0 tvar cnt
-000F tvar nib0
-2048 tvar uartWrite
-2000 tvar _uwrite
-
 : flags? 1 iGET ;
 : flags! 1 iSET ;
 : clr 0 iLITERAL ;
@@ -107,7 +102,14 @@ size =cell - tep !
 : repeat branch then ;
 : again branch ;
 
-0 tvar _emit ( TODO: wait if TX Queue full )
+0 t, 1 t,
+
+( 0 tvar cnt
+000F tvar nib0
+2048 tvar uartWrite
+2000 tvar _uwrite
+
+0 tvar _emit \ TODO: wait if TX Queue full
 : emit _emit iSTORE-C _uwrite iLOAD-C _emit 2/ iOR 801 iSET ; 
 
 label: entry
@@ -116,7 +118,7 @@ label: entry
 	2 t,
 	clr
 	indirect \ We assume indirect is on for all instructions
-\ ( 
+ ( 
 	$800 iGET
 	$800 iSET
 
@@ -143,6 +145,8 @@ label: end
 \ compact as possible, perhaps under 512 bytes, including return and program
 \ stacks! That might be a bit of a stretch however.
 
+\ TODO: Place variables where they are declared and jump to start
+
 \ Memory locations 0 and 1 should contain 0 and 1 respectively.
 $200 tvar ip  \ entry point of virtual machine program
 $200 tvar sp  \ stack pointer
@@ -164,67 +168,40 @@ FF tvar half  \ lowest set
 : --rp rp iLOAD-C -vcell iADD rp iSTORE-C fdefault ;
 : ++rp rp iLOAD-C  vcell iADD rp iSTORE-C ;	
 
-
 label: start
 	$200 iLITERAL
 	ip iSTORE-C
 label: next
 	fdefault
-	\ *ip++ -> w
-	ip iLOAD
+	ip iLOAD-C
 	w iSTORE-C
 	ip iLOAD-C
 	vcell iADD
 	ip iSTORE-C
-	\ jump **w++
-	w iLOAD-C
-	t iSTORE-C
-	vcell iADD
+	w iLOAD-C pc!
+
+( label: nest \ Must set accumulator before using '0 iGET'
 	w iSTORE-C
-	t iLOAD
-	t iSTORE-C
-	t iLOAD
-	pc!
-	
-label: nest
-	\ ip -> *rp++
-	ip iLOAD-C
+	++rp
+	w iLOAD-C
 	rp iSTORE
-	rp iLOAD-C
-	vcell iADD
-	rp iSTORE-C
-	\ w -> ip
-	w iLOAD-C
-	ip iSTORE-C
-	next iJUMP
+	next branch
 label: unnest
-	\ *--rp -> ip
-	rp iLOAD-C
-	-vcell iADD
-	rp iSTORE-C
-	fdefault
-	rp iLOAD
-	ip iSTORE-C
-	next iJUMP
-label: skip
-	\ jump *(*++ip)
-	ip iLOAD-C
-	vcell iADD
-	ip iSTORE-C
-	ip iLOAD
-	pc!
+	next branch )
+
 label: opPush
 	++sp
 	tos iLOAD-C
 	sp iSTORE
 	
 	ip iLOAD-C
-	vcell iADD
 	t iSTORE-C
 	t iLOAD
-	
 	tos iSTORE-C
-	skip iJUMP
+	ip iLOAD-C
+	vcell iADD
+	ip iSTORE-C
+	next branch
 label: opJump
 	ip iLOAD-C vcell iADD ip iSTORE-C
 	ip iLOAD
@@ -236,9 +213,9 @@ label: opJumpZ
 	sp iLOAD
 	tos iSTORE
 	t iLOAD-C
-	opJump iJUMPZ
+	opJump 2/ iJUMPZ
 	ip iLOAD-C vcell iADD ip iSTORE-C
-	skip iJUMP
+	next branch
 label: opHalt
 	halt
 label: opBye
@@ -248,34 +225,34 @@ label: opAnd
 	tos iAND
 	tos iSTORE-C
 	--sp
-	skip iJUMP
+	next branch
 label: opOr
 	sp iLOAD
 	tos iOR
 	tos iSTORE-C
 	--sp
-	skip iJUMP
+	next branch
 label: opXor
 	sp iLOAD
 	tos iOR
 	tos iSTORE-C
 	--sp
-	skip iJUMP
+	next branch
 label: opInvert
 	tos iLOAD-C
 	set iXOR
 	tos iSTORE-C
-	skip iJUMP
+	next branch
 label: opAdd
 	sp iLOAD
 	tos iADD
 	tos iSTORE-C
 	fdefault
 	--sp
-	skip iJUMP
+	next branch
 label: opLOAD
 	tos iLOAD
-	skip iJUMP
+	next branch
 label: opSTORE
 	sp iLOAD
 	tos iSTORE
@@ -283,25 +260,18 @@ label: opSTORE
 	sp iLOAD
 	tos iSTORE-C
 	--sp
-	skip iJUMP
-\ Also need >r r> r@ r sp lshift rshift 1+ 1-
+	next branch
+\ Also need: um+ >r r> r@ r sp lshift rshift 1+ 1-
 
-label: i_program
-	opHalt t,
-
-$200 tdp !
-	i_program t,
+: lit opPush branch t, ;
 
 
-
-: lit opPush t, t, ;
-
-
-\ TODO: Redefine -- if, else, then, begin, until, ... in a new vocabulary
-\ 200 tdp !
-\	opHalt
+$400 tdp !
+	\ 4 lit 4 lit opAdd branch
+	opHalt branch
 
 save-hex bit.hex
 
 only forth definitions decimal
+.( DONE ) cr
 bye

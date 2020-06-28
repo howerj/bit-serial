@@ -117,7 +117,7 @@ The instructions are:
 	| UNUSED      | N/A                                    | Unused instruction                | 3*(N+1)          |
 	| JUMP        | pc = op                                | Unconditional Jump                | 2*(N+1)          |
 	| JUMPZ       | if(!acc){pc = op }                     | Jump If Zero                      | [2 or 3]*(N+1)   |
-	| SET         | if(op&0x800) { io(op|0x8000) = acc   } | Set I/O or Register               | [2,3 or 4]*(N+1) |
+	| SET         | if(op&0x800) { io(op|0x8000) = acc   } | Set I/O or Register               | [3 or 4]*(N+1)   |
 	|             | else { if(op&1){flg=acc}else{pc=acc} } |                                   |                  |
 	| GET         | if(op&0x800) { acc = io(op|0x8000)   } | Get I/O or Register               | [3 or 4]*(N+1)   |
 	|             | else { if(op&1){acc=flg}else{acc=pc} } |                                   |                  |
@@ -355,6 +355,8 @@ assembler.
 * Variable cycle states should have been used, FETCH could be 4/5 cycles,
   INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
   EXECUTE 16/17 along with the other instructions.
+* The CPU could be simplified further if we are willing to use self-modifying
+  code.
 * In principle interrupts could be added in the following way:
   - During any cycle an interrupt is noted and latched in.
   - When the processor gets back into the FETCH state it checks if

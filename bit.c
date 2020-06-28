@@ -20,7 +20,7 @@
 
 typedef uint16_t mw_t; /* machine word */
 typedef struct { mw_t pc, acc, flg, m[MSIZE]; } bcpu_t;
-typedef struct { FILE *in, *out, *trace; mw_t ch, leds, switches; int rheader; } bcpu_io_t;
+typedef struct { FILE *in, *out, *trace; mw_t ch, leds, switches; int rheader, dec; } bcpu_io_t;
 enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 
 static void die(const char *fmt, ...) {
@@ -50,16 +50,21 @@ static inline int trace(bcpu_t *b, bcpu_io_t *io,
 	assert(cmd < (sizeof(commands)/sizeof(commands[0])));
 	char cbuf[9] = { 0 };
 	if ((io->rheader == 0 && cycles == 0) || (io->rheader && ((cycles % io->rheader) == 0))) {
-		if (fprintf(io->trace, ".-------+------+-----------+------+------+------+------.\n") < 0)
+		if (fprintf(io->trace, ".-------+------+------------+------+------+------+------.\n") < 0)
 			return -1;
-		if (fprintf(io->trace, "| cycl  |  pc  |  command  |  acc |  op1 |  flg | leds |\n") < 0)
+		if (fprintf(io->trace, "| cycl  |  pc  |  command   |  acc |  op1 |  flg | leds |\n") < 0)
 			return -1;
-		if (fprintf(io->trace, ".-------+------+-----------+------+------+------+------.\n") < 0)
+		if (fprintf(io->trace, ".-------+------+------------+------+------+------+------.\n") < 0)
 			return -1;
 	}
 	if (snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]) < 0)
 		return -1;
-	return fprintf(io->trace, "| %5x | %4x | %1x:%s | %4x | %4x | %4x | %4x |\n", 
+	if (io->dec)
+		return fprintf(io->trace, "| %5u | %4u | %2u:%s | %4u | %4u | %4u | %4u |\n", 
+				cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
+				(unsigned)acc, (unsigned)op1, (unsigned)flg, 
+				(unsigned)io->leds);
+	return fprintf(io->trace, "| %5x | %4x | %2x:%s | %4x | %4x | %4x | %4x |\n", 
 			cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
 			(unsigned)acc, (unsigned)op1, (unsigned)flg, 
 			(unsigned)io->leds);
@@ -106,6 +111,7 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr) {
 	assert(b);
 	assert(io);
+	assert(addr < MSIZE);
 	if (!is_io)
 		return b->m[addr % MSIZE];
 	switch (addr & 0x7) {
@@ -118,6 +124,7 @@ static inline mw_t bload(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr) {
 static inline void bstore(bcpu_t *b, bcpu_io_t *io, int is_io, mw_t addr, mw_t val) {
 	assert(b);
 	assert(io);
+	assert(addr < MSIZE);
 	if (!is_io) {
 		b->m[addr % MSIZE] = val;
 		return;
@@ -145,16 +152,24 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, const unsigned cycles) {
 	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
 	const unsigned forever = cycles == 0;
        	unsigned count = 0;
+	flg |= (1u << fZ);
+
 	for (; count < cycles || forever; count++) {
+		assert(pc < MSIZE);
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 		const int rot    = !!(flg & (1u << fROT));
 		if (CONFIG_TRACER_ON)
 			trace(b, io, count, pc, flg, acc, op1, cmd);
-		if (flg & (1u << fHLT)) /* HALT */
+		if (flg & (1u << fHLT)) { /* HALT */
+			if (io->trace)
+				(void)fprintf(io->trace, "{HALT}\n");
 			goto halt;
+		}
 		if (flg & (1u << fR)) { /* RESET */
+			if (io->trace)
+				(void)fprintf(io->trace, "{RESET}\n");
 			pc = 0;
 			acc = 0;
 			flg = 0;
@@ -162,9 +177,9 @@ static int bcpu(bcpu_t *b, bcpu_io_t *io, const unsigned cycles) {
 		flg &= ~((1u << fZ) | (1u << fNg) | (1u << fPAR));
 		flg |= ((!acc) << fZ);              /* set zero flag     */
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
-		flg |= (!(bits(acc) & 1u)) << fPAR; /* set parity bit    */
+		flg |= ((bits(acc) & 1u)) << fPAR;  /* set parity bit    */
 
-		const int loadit = !(cmd & 0x4) && (flg & (1u << fIND));
+		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
 		const mw_t lop = loadit ? bload(b, io, 0, op1) : op1; 
 		pc++;
 		switch (cmd) {
@@ -250,10 +265,11 @@ int main(int argc, char **argv) {
 					  die("'c' option requires numeric argument");
 				  cycles = atoi(argv[i]);
 				  goto fin;
-			case 'h': return printf("usage: %s -[tsfe] [-c cycles] input.hex? out.hex?", argv[0]), 0;
+			case 'h': return printf("usage: %s -[tsfed] [-c cycles] input.hex? out.hex?\n", argv[0]), 0;
 			case 'e': io.rheader = 32;   break;
 			case 's': io.trace = NULL;   break;
 			case 't': io.trace = stderr; break;
+			case 'd': io.dec   = 1;      break;
 			default:
 				  die("invalid option -- %c", argv[i][j]);
 			}

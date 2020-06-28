@@ -9,7 +9,7 @@ BAUD?=115200
 all: bit simulation
 
 run: bit bit.hex
-	./bit -d bit.hex
+	./bit -d bit.hex out.hex
 
 talk:
 	picocom --omap delbs -e b -b ${BAUD} ${USB}
@@ -44,7 +44,7 @@ tb.o: tb.vhd bit.o peripherals.o top.o
 tb: tb.o bit.o peripherals.o top.o
 	ghdl -e $@
 
-tb.ghw: tb bit.hex
+tb.ghw: tb tb.conf bit.hex
 	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable
 
 SOURCES = \

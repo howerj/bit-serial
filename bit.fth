@@ -1,8 +1,21 @@
-( Cross Compiler for the bit-serial CPU available at
-  <https://github.com/howerj/bit-serial>
+( 
 
-  Based off of the meta-compiler for the j1 processor available at
-  <https://github.com/samawati/j1eforth> )
+Cross Compiler for the bit-serial CPU available at:
+
+  <https://github.com/howerj/bit-serial> 
+
+
+This implements a Direct Threaded Code virtual machine on which we can
+build a Forth interpreter.
+
+References:
+
+- <https://en.wikipedia.org/wiki/Threaded_code>
+- <https://github.com/samawati/j1eforth> 
+- <https://github.com/howerj/embed> 
+- <https://github.com/howerj/forth-cpu>
+
+)
 
 only forth definitions hex
 
@@ -21,6 +34,7 @@ meta +order
 000a constant =lf
    2 constant =cell
 2000 constant size
+  40 constant =stksz
 
 create tflash size cells here over erase allot
 
@@ -29,7 +43,7 @@ variable tep
 size =cell - tep !
 
 : there tdp @ ;
-: tend tep @ ;
+: tallot tdp +! ;
 : tc! tflash + c! ;
 : tc@ tflash + c@ ;
 : t! over ff and over tc! swap 8 rshift swap 1+ tc! ;
@@ -44,11 +58,10 @@ size =cell - tep !
 : hex# ( u -- addr len )  0 <# base @ >r hex =lf hold # # # # r> base ! #> ;
 : save-hex ( <name> -- )
   parse-word w/o create-file throw
-  size 0 do i t@  over >r hex# r> write-file throw 2 +loop
+  there 0 do i t@  over >r hex# r> write-file throw =cell +loop
    close-file throw ;
 
-: tvar tend t! create tend , -2 tep +! does> @ ;
-: tcnst tend t! create tend @ , -2 tep +! does> @ ;
+: tvar create there , t, does> @ ;
 : label: create there , does> @ ;
 
 : iOR      0000 or t, ;
@@ -83,8 +96,6 @@ size =cell - tep !
 : clr 0 iLITERAL ;
 : halt flgHlt iLITERAL flags! ;
 : reset flgR   iLITERAL flags! ;
-: indirect flgInd iLITERAL flags! ;
-: direct clr flags! ;
 : inc 1 iADD ;  ( works in direct/indirect mode if address[1] = 1 )
 : nop 0 iOR ;   ( works in direct/indirect mode if address[0] = 0 )
 : branch 2/ iJUMP ;
@@ -102,66 +113,30 @@ size =cell - tep !
 : repeat branch then ;
 : again branch ;
 
-0 t, 1 t,
 
-( 0 tvar cnt
-000F tvar nib0
-2048 tvar uartWrite
-2000 tvar _uwrite
-
-0 tvar _emit \ TODO: wait if TX Queue full
-: emit _emit iSTORE-C _uwrite iLOAD-C _emit 2/ iOR 801 iSET ; 
-
+0 t,  \ must be 0 ('0 iOR'  works in either indirect or direct mode)
+1 t,  \ must be 1 ('1 iADD' works in either indirect or direct mode)
 label: entry
-	0 t,
-	1 t,
-	2 t,
-	clr
-	indirect \ We assume indirect is on for all instructions
- ( 
-	$800 iGET
-	$800 iSET
+0 t,  \ our actual entry point
 
-	char H iLITERAL emit 
-
-	clr
-	begin
-		cnt iLOAD-C
-		inc
-		nib0 2/ iAND
-		cnt iSTORE-C
-		zero?
-	until
-
-label: end
-	\ reset
-	halt )
-
-\ TODO: Implement a virtual machine for a token thread stack machine, see
-\ <https://en.wikipedia.org/wiki/Threaded_code#Token_threading> for more
-\ information. It is this machine that we will target. We will have to put
-\ all the words we have defined here into the assembly word-set and define
-\ an entirely new of words. We will want to keep this virtual machine as
-\ compact as possible, perhaps under 512 bytes, including return and program
-\ stacks! That might be a bit of a stretch however.
-
-\ TODO: Place variables where they are declared and jump to start
-
-\ Memory locations 0 and 1 should contain 0 and 1 respectively.
-$200 tvar ip  \ entry point of virtual machine program
-$200 tvar sp  \ stack pointer
-$180 tvar rp  \ return stack pointer
+FFFF tvar set \ all bits set, -1
+0 tvar <cold> \ entry point of virtual machine program, set later on
+0 tvar ip     \ instruction pointer
 0 tvar w      \ working pointer
-0 tvar tos    \ top of stack
 0 tvar t      \ temporary register
-FFFF tvar set \ all bits set
-FF tvar half  \ lowest set
+0 tvar tos    \ top of stack
+label: RSTACK
+=stksz tallot
+label: VSTACK
+=stksz tallot
+VSTACK =stksz + 2/ tvar sp  \ stack pointer
+RSTACK          2/ tvar rp  \ return stack pointer
 
 : fdefault flgInd iLITERAL flags! ;
-\ : opcode: there . label: ; 
-: opcode: create there dup . , does> @ , ;
-: vcell 1 ;
-: -vcell set ;
+\ : t: create there dup . , does> @ , ;
+\ : ;t ;
+: vcell 1 ( cell '1' should contain '1' ) ;
+: -vcell set 2/ ;
 : pc! 0 iSET ; ( acc -> pc )
 : --sp sp iLOAD-C  vcell iADD sp iSTORE-C ;
 : ++sp sp iLOAD-C -vcell iADD sp iSTORE-C fdefault ;
@@ -169,7 +144,10 @@ FF tvar half  \ lowest set
 : ++rp rp iLOAD-C  vcell iADD rp iSTORE-C ;	
 
 label: start
-	$200 iLITERAL
+	start 2/ C000 or entry t!
+	fdefault
+
+	<cold> iLOAD-C
 	ip iSTORE-C
 label: next
 	fdefault
@@ -195,8 +173,8 @@ label: opPush
 	sp iSTORE
 	
 	ip iLOAD-C
-	t iSTORE-C
-	t iLOAD
+	w iSTORE-C
+	w iLOAD
 	tos iSTORE-C
 	ip iLOAD-C
 	vcell iADD
@@ -208,11 +186,11 @@ label: opJump
 	pc!
 label: opJumpZ
 	tos iLOAD-C
-	t iSTORE-C
+	w iSTORE-C
 	--sp
 	sp iLOAD
 	tos iSTORE
-	t iLOAD-C
+	w iLOAD-C
 	opJump 2/ iJUMPZ
 	ip iLOAD-C vcell iADD ip iSTORE-C
 	next branch
@@ -222,30 +200,30 @@ label: opBye
 	reset
 label: opAnd
 	sp iLOAD
-	tos iAND
+	tos 2/ iAND
 	tos iSTORE-C
 	--sp
 	next branch
 label: opOr
 	sp iLOAD
-	tos iOR
+	tos 2/ iOR
 	tos iSTORE-C
 	--sp
 	next branch
 label: opXor
 	sp iLOAD
-	tos iOR
+	tos 2/ iXOR
 	tos iSTORE-C
 	--sp
 	next branch
 label: opInvert
 	tos iLOAD-C
-	set iXOR
+	set 2/ iXOR
 	tos iSTORE-C
 	next branch
 label: opAdd
 	sp iLOAD
-	tos iADD
+	tos 2/ iADD
 	tos iSTORE-C
 	fdefault
 	--sp
@@ -265,9 +243,13 @@ label: opSTORE
 
 : lit opPush branch t, ;
 
+label: cold
+	there 2/ <cold> t!
+	2048 lit 8801 lit opSTORE branch
+	5 lit
+	6 lit
+	opAdd branch
 
-$400 tdp !
-	\ 4 lit 4 lit opAdd branch
 	opHalt branch
 
 save-hex bit.hex
@@ -275,3 +257,4 @@ save-hex bit.hex
 only forth definitions decimal
 .( DONE ) cr
 bye
+

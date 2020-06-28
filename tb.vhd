@@ -8,6 +8,7 @@ library ieee, work, std;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.util.all;
+use std.textio.all;
 
 entity tb is
 end tb;
@@ -15,9 +16,10 @@ end tb;
 architecture testing of tb is
 	constant g: common_generics           := default_settings;
 	constant clock_period:       time     := 1000 ms / g.clock_frequency;
-	constant clocks:             integer  := 128*6*16; -- TODO: load this from configuration file.
+	shared variable clocks:      integer  := 10000;
+	shared variable forever:     integer  := 0;
+	shared variable debug:       integer  := 1;
 	constant N:                  positive := 16;
-	constant debug:              natural  := 1;
 
 	signal ld: std_ulogic_vector(7 downto 0) := (others => '0');
 	signal sw: std_ulogic_vector(7 downto 0) := x"AA";
@@ -26,6 +28,23 @@ architecture testing of tb is
 	signal halt:   std_ulogic := '0';
 	signal rst:    std_ulogic := '1';
 	signal tx, rx: std_ulogic := '0';
+
+	impure function configure(the_file_name: in string) return boolean is
+		file     in_file: text is in the_file_name;
+		variable in_line: line;
+		variable i:       integer;
+	begin
+		if endfile(in_file) then return false; end if; 
+		readline(in_file, in_line); read(in_line, i); 
+		clocks := i;
+		readline(in_file, in_line); read(in_line, i); 
+		forever := i;
+		readline(in_file, in_line); read(in_line, i); 
+		debug := i;
+		return true;
+	end function;
+
+	signal configured: boolean := configure("tb.conf");
 begin
 	uut: entity work.top
 		generic map(
@@ -49,7 +68,7 @@ begin
 		stop <= false;
 		wait for clock_period;
 		rst  <= '0';
-		while count < clocks and halt = '0' loop
+		while (count < clocks or forever /= 0)  and halt = '0' loop
 			clk <= '1';
 			wait for clock_period / 2;
 			clk <= '0';

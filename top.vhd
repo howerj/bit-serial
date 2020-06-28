@@ -11,10 +11,11 @@ use work.util.all;
 
 entity top is
 	generic (
-		g: common_generics  := default_settings;
-		file_name: string   := "bit.hex";
-		N:         positive := 16;
-		debug:     natural  := 0 -- will not synthesize if greater than zero (debug off)
+		g:             common_generics := default_settings;
+		file_name:     string          := "bit.hex";
+		N:             positive        := 16;
+		debug:         natural         := 0; -- will not synthesize if greater than zero (debug off)
+		use_uart_fifo: boolean         := false
 	);
 	port (
 		clk:         in std_ulogic;
@@ -36,10 +37,11 @@ architecture rtl of top is
 begin
 	peripheral: entity work.peripherals
 		generic map(
-			g         => g,
-			file_name => file_name,
-			W         => W,
-			N         => N)
+			g             => g,
+			file_name     => file_name,
+			W             => W,
+			N             => N,
+			use_uart_fifo => use_uart_fifo)
 		port map (
 			clk => clk, rst => rst,
 			tx => tx, rx => rx, ld => ld, sw => sw,

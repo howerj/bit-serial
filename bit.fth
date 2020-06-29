@@ -43,7 +43,6 @@ variable tep
 size =cell - tep !
 
 : there tdp @ ;
-: tallot tdp +! ;
 : tc! tflash + c! ;
 : tc@ tflash + c@ ;
 : t! over ff and over tc! swap 8 rshift swap 1+ tc! ;
@@ -102,16 +101,15 @@ size =cell - tep !
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
 
-: begin there ;
-: until ?branch ;
-
-: if there 0 ?branch ;
-: skip there 0 branch ;
-: then begin 2/ over t@ or swap t! ;
-: else skip swap then ;
-: while if swap ;
-: repeat branch then ;
-: again branch ;
+\ : begin there ;
+\ : until ?branch ;
+\ : if there 0 ?branch ;
+\ : skip there 0 branch ;
+\ : then begin 2/ over t@ or swap t! ;
+\ : else skip swap then ;
+\ : while if swap ;
+\ : repeat branch then ;
+\ : again branch ;
 
 
 0 t,  \ must be 0 ('0 iOR'  works in either indirect or direct mode)
@@ -125,11 +123,11 @@ FFFF tvar set \ all bits set, -1
 0 tvar w      \ working pointer
 0 tvar t      \ temporary register
 0 tvar tos    \ top of stack
-label: RSTACK
+label: RSTACK \ Return stack start, grows upwards
 =stksz tallot
-label: VSTACK
+label: VSTACK \ Variable stack *end*, grows downwards
 =stksz tallot
-VSTACK =stksz + 2/ tvar sp  \ stack pointer
+VSTACK =stksz + 2/ tvar sp  \ variable stack pointer
 RSTACK          2/ tvar rp  \ return stack pointer
 
 : fdefault flgInd iLITERAL flags! ;
@@ -240,6 +238,7 @@ label: opSTORE
 	--sp
 	next branch
 \ Also need: um+ >r r> r@ r sp lshift rshift 1+ 1-
+\ 'lshift' and 'rshift' will need to convert the shift amount 
 
 : lit opPush branch t, ;
 

@@ -269,7 +269,6 @@ int main(int argc, char **argv) {
 	static bcpu_t b = { .in = NULL };
 	b.in    = stdin;
 	b.out   = stdout;
-	b.trace = stderr;
 	FILE *file = stdin, *hex = NULL;
 	for (i = 1; i < argc; i++) {
 		if (argv[i][0] != '-')

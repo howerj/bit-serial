@@ -248,7 +248,6 @@ label: cold
 	5 lit
 	6 lit
 	opAdd branch
-
 	opHalt branch
 
 save-hex bit.hex

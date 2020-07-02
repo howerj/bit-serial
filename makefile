@@ -2,22 +2,28 @@ CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O2
 USB?=/dev/ttyUSB0
 BAUD?=115200
+DIFF?=vimdiff
 #BAUD?=9600
 
-.PHONY: all run simulation viewer clean documentation
+.PHONY: all run diff simulation viewer clean documentation
 
 all: bit simulation
 
-run: bit bit.hex
-	./bit -t -d bit.hex out.hex
+run c.log out.hex: bit bit.hex
+	./bit tb.conf bit.hex out.hex 2> c.log
+	cat c.log
+
+diff: c.log vhdl.log
+	${DIFF} c.log vhdl.log
 
 talk:
 	picocom --omap delbs -e b -b ${BAUD} ${USB}
 
-simulation: tb.ghw
+simulation: tb.ghw vhdl.log
+	cat vhdl.log
 
-viewer: tb.ghw simulation
-	gtkwave -f $< &> /dev/null&
+viewer: tb.ghw signals.tcl
+	gtkwave -S signals.tcl -f $< > /dev/null 2>&1 &
 
 documentation: readme.htm
 
@@ -44,8 +50,8 @@ tb.o: tb.vhd bit.o peripherals.o top.o
 tb: tb.o bit.o peripherals.o top.o
 	ghdl -e $@
 
-tb.ghw: tb tb.conf bit.hex
-	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable
+tb.ghw vhdl.log: tb tb.conf bit.hex
+	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable > vhdl.log
 
 SOURCES = \
 	top.vhd \
@@ -128,19 +134,6 @@ implementation: reports tmp
 	@rmdir _xmsgs
 	@mv par_usage_statistics.html top.ptwx top.pad top_pad.csv top.unroutes top.xpi top_par.xrpt tmp
 	
-	@#trce -intstyle silent -v 3 -s 3 -n 3 -fastpaths -xml top.twx top.ncd -o top.twr top.pcf -ucf top.ucf
-	@#mv top.twr reports/trce.log
-	@#mv _xmsgs/* tmp/_xmsgs
-	@#rmdir _xmsgs
-	@#mv top.twx tmp
-
-	@#netgen -intstyle silent -ofmt vhdl -sim -w top.ngc top_xsim.vhd
-	@#netgen -intstyle silent -ofmt vhdl -sim -w -pcf top.pcf top.ncd top_tsim.vhd
-	@#mv _xmsgs/* tmp/_xmsgs
-	@#rmdir _xmsgs
-	@#mv top_xsim.nlf top_tsim.nlf tmp
-
-
 design.bit: reports tmp/_xmsgs
 	@echo "Generate bitfile running..."
 	@touch webtalk.log

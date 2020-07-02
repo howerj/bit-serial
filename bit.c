@@ -21,9 +21,11 @@ typedef uint16_t mw_t; /* machine word */
 typedef struct { 
 	mw_t pc, acc, flg, m[MSIZE]; 
 	/* io */ 
-	FILE *in, *out, *trace; mw_t ch, leds, switches; 
+	FILE *in, *out; mw_t ch, leds, switches;
 	/* options */
-	int rheader, dec; 
+	unsigned long cycles;
+	int forever;
+	FILE *trace;
 } bcpu_t;
 enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 
@@ -52,39 +54,37 @@ static int debug(bcpu_t *b, const char *fmt, ...) {
 	return r1 < 0 || r2 < 0 || r3 < 0 ? -1 : r1 + 1;
 }
 
-static int trace(bcpu_t *b, 
-		unsigned cycles, const mw_t pc, const mw_t flg, 
-		const mw_t acc, const mw_t op1, const mw_t cmd) {
+static int yn(bcpu_t *b, int idx, char ch, unsigned flg) {
 	assert(b);
+	char s[3] = { 1u << idx & flg ? ch : '-', ' ', '\0'};
+	return fputs(s, b->trace) < 0 ? -1 : 0;
+}
+
+static int trace(bcpu_t *b, 
+		const unsigned cycles, const unsigned pc, const unsigned flg, 
+		const unsigned acc, const unsigned op1, const unsigned cmd) {
+	assert(b);
+	(void)(cycles);
 	if (!(b->trace))
 		return 0;
 	static const char *commands[] = { 
-		"or     ", "and    ", "xor    ", "add    ",  
-		"lshift ", "rshift ", "load   ", "store  ",
-		"load-c ", "store-c", "literal", "unused ",
-		"jump   ", "jumpz  ", "set    ", "get    ",
+		"ior",     "iand",    "ixor",     "iadd",  
+		"ilshift", "irshift", "iload",    "istore",
+		"iloadc",  "istorec", "iliteral", "iunused",
+		"ijump",   "ijumpz",  "iset",     "iget",
 	};
 	assert(cmd < (sizeof(commands)/sizeof(commands[0])));
-	char cbuf[9] = { 0 };
-	if ((b->rheader == 0 && cycles == 0) || (b->rheader && ((cycles % b->rheader) == 0))) {
-		if (fprintf(b->trace, ".-------+------+------------+------+------+------+------.\n") < 0)
-			return -1;
-		if (fprintf(b->trace, "| cycl  |  pc  |  command   |  acc |  op1 |  flg | leds |\n") < 0)
-			return -1;
-		if (fprintf(b->trace, ".-------+------+------------+------+------+------+------.\n") < 0)
-			return -1;
-	}
-	if (snprintf(cbuf, sizeof cbuf - 1, "%s       ", commands[cmd]) < 0)
+	if (fprintf(b->trace, "%04X: %s\t%04X %04X %04X ", pc, commands[cmd], acc, op1, flg) < 0)
 		return -1;
-	if (b->dec)
-		return fprintf(b->trace, "| %5u | %4u | %2u:%s | %4u | %4u | %4u | %4u |\n", 
-				cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
-				(unsigned)acc, (unsigned)op1, (unsigned)flg, 
-				(unsigned)b->leds);
-	return fprintf(b->trace, "| %5x | %4x | %2x:%s | %4x | %4x | %4x | %4x |\n", 
-			cycles, (unsigned)pc, (unsigned)cmd, cbuf, 
-			(unsigned)acc, (unsigned)op1, (unsigned)flg, 
-			(unsigned)b->leds);
+	if (yn(b, fCy,  'C', flg) < 0) return -1;
+	if (yn(b, fZ,   'Z', flg) < 0) return -1;
+	if (yn(b, fNg,  'N', flg) < 0) return -1;
+	if (yn(b, fPAR, 'P', flg) < 0) return -1;
+	if (yn(b, fROT, 'S', flg) < 0) return -1;
+	if (yn(b, fR,   'R', flg) < 0) return -1;
+	if (yn(b, fIND, 'I', flg) < 0) return -1;
+	if (yn(b, fHLT, 'H', flg) < 0) return -1;
+	return fputc('\n', b->trace) < 0 ? -1 : 0;
 }
 
 static inline unsigned bits(unsigned b) {
@@ -163,28 +163,34 @@ static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	}
 }
 
-static int bcpu(bcpu_t *b, const unsigned cycles) {
+static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 	assert(b);
 	int r = 0;
 	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
-	const unsigned forever = cycles == 0;
        	unsigned count = 0;
 	flg |= (1u << fZ);
 
 	for (; count < cycles || forever; count++) {
 		if (pc >= MSIZE)
-			debug(b, "{INVALID PC: %u}", (unsigned)pc);
+			if (debug(b, "{INVALID PC: %u}", (unsigned)pc) < 0) {
+				r = -1;
+				goto halt;
+			}
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 		const int rot    = !!(flg & (1u << fROT));
-		trace(b, count, pc, flg, acc, op1, cmd);
 		if (flg & (1u << fHLT)) { /* HALT */
-			debug(b, "{HALT}");
+			if (debug(b, "{HALT}") < 0)
+				r = -1;
 			goto halt;
 		}
+
 		if (flg & (1u << fR)) { /* RESET */
-			debug(b, "{RESET}");
+			if (debug(b, "{RESET}") < 0) {
+				r = -1;
+				goto halt;
+			}
 			pc = 0;
 			acc = 0;
 			flg = 0;
@@ -196,6 +202,11 @@ static int bcpu(bcpu_t *b, const unsigned cycles) {
 
 		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
 		const mw_t lop = loadit ? bload(b, op1) : op1; 
+
+		if (trace(b, count, pc, flg, acc, lop, cmd) < 0) {
+			r = -1;
+			goto halt;
+		}
 		pc++;
 		switch (cmd) {
 		case 0x0: acc |= lop;                            break; /* OR      */
@@ -264,43 +275,43 @@ static FILE *fopen_or_die(const char *file, const char *mode) {
 	return r;
 }
 
+/* Because of the limitations of the VHDL test bench configuration items
+ * are identified by their position in the file */
+static int configure(bcpu_t *b, const char *file, FILE *tfile) {
+	assert(b);
+	assert(file);
+	assert(tfile);
+	int d = 0;
+	FILE *cfg = fopen_or_die(file, "rb");
+	b->forever = 1;
+	b->cycles  = 10000; /* VHDL simulation uses clock cycles, this is an instruction count */
+	b->trace   = NULL;
+	if (fscanf(cfg, "%lu", &b->cycles) < 0)  goto done;
+	if (fscanf(cfg, "%d",  &b->forever) < 0) goto done;
+	if (fscanf(cfg, "%d",  &d) < 0)          goto done;
+done:
+	b->trace = d ? tfile : NULL;
+	if (fclose(cfg) < 0)
+		return 0;
+	return 0;
+}
+
 int main(int argc, char **argv) {
-	int cycles = 0x1000, i = 0;
+	int cycles = 0x1000, i = 1, forever = 1;
 	static bcpu_t b = { .in = NULL };
 	b.in    = stdin;
 	b.out   = stdout;
-	FILE *file = stdin, *hex = NULL;
-	for (i = 1; i < argc; i++) {
-		if (argv[i][0] != '-')
-			break;
-		for (int j = 1; argv[i][j]; j++)
-			switch (argv[i][j]) {
-			case '-': i++; goto done;
-			case 'c':
-				  if (++i >= argc)
-					  die("'c' option requires numeric argument");
-				  cycles = atoi(argv[i]);
-				  goto fin;
-			case 'h': return printf("usage: %s -[tsfed] [-c cycles] input.hex? out.hex?\n", argv[0]), 0;
-			case 'e': b.rheader = 32;   break;
-			case 's': b.trace = NULL;   break;
-			case 't': b.trace = stderr; break;
-			case 'd': b.dec   = 1;      break;
-			default:
-				  die("invalid option -- %c", argv[i][j]);
-			}
-		fin:
-			;
-	}
-done:
-
+	FILE *file = stdin, *hex = NULL, *tfile = stderr;
+	if (i < argc)
+		if (configure(&b, argv[i++], tfile) < 0)
+			return 1;
 	if (i < argc)
 		file = fopen_or_die(argv[i++], "rb");
 	if (i < argc)
 		hex  = fopen_or_die(argv[i++], "wb");
 	if (load(&b, file) < 0)
 		die("loading hex file failed");
-	if (bcpu(&b, cycles) < 0)
+	if (bcpu(&b, cycles, forever) < 0)
 		die("running failed");
 	if (hex && save(&b, hex) < 0)
 		die("saving file failed");

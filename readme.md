@@ -332,19 +332,11 @@ assembler.
 
 # Notes
 
-* The CPU is difficult to program, there are three ways of remedying this;
-  a complete CPU instruction set redesign, borrowing one more bit from the
-  address/operand and using this as an indirection bit (which would free up
-  some instructions) and the last, most preferable, is to design a tool-chain
-  which hides all this by providing a Forth interpreter as a programming
-  interface. The reason the processor is difficult to program for is; a lack
-  of a built in call/return mechanism and instructions that require setting
-  mode flags.
-* Ideas for a completely different CPU architecture that is also bit serial
-  include; a nibble or byte oriented CPU (with 8 or 16 bit operands), the
-  former would allow for particularly dense code, potentially, or implementing
-  a full stack machine instead of an accumulator machine. Stack machines are
-  much easier to use and to compile to.
+* The documentation contains a state-machine diagram, a timing diagram,
+  instruction set listing, and register map. A block diagram explaining
+  the CPU in more detail using higher level blocks (like shift-registers,
+  adders, gates, flip flops) would help in analyzing and understanding the
+  CPU architecture).
 * Two of these cores could be hooked up to one Dual Port block RAM. This is
   another intention and goal of the device, this allows one FPGA based
   application (say a text terminal) to share memory with one BCPU core.
@@ -356,7 +348,9 @@ assembler.
   INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
   EXECUTE 16/17 along with the other instructions.
 * The CPU could be simplified further if we are willing to use self-modifying
-  code.
+  code, this could be done by removing the indirection options, this would
+  make programming the CPU *much* more difficult without the correct tool-chain
+  support.
 * In principle interrupts could be added in the following way:
   - During any cycle an interrupt is noted and latched in.
   - When the processor gets back into the FETCH state it checks if

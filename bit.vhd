@@ -22,7 +22,7 @@ entity bcpu is
 		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false
 		delay:              time       := 0 ns;   -- simulation only, gate delay
 		N:                  positive   := 16;     -- size the CPU, minimum is 8
-		parity:             std_ulogic := '0';    -- set parity (even/odd) of parity flag
+		parity:             std_ulogic := '0';    -- set parity (even = '0'/odd = '1') of parity flag
 		jumpz:              std_ulogic := '1';    -- jump on zero = '1', jump on non-zero = '0'
 		indirection:        boolean    := true;   -- if true, indirection is on instruction is turned on.
 		debug:              natural    := 0);     -- debug level, 0 = off
@@ -83,12 +83,15 @@ architecture rtl of bcpu is
 		cmd    => (others => 'X'));
 
 	signal c, f: registers_t := registers_default; -- BCPU registers, all of them.
+	-- These signals are not used to hold state. The 'c' and 'f' registers
+	-- do that.
 	signal cmd: cmd_t; -- Shows up nicely in traces as an enumerated value
 	signal add1, add2, acin, ares, acout: std_ulogic; -- shared adder signals
 	signal last4, last:                   std_ulogic; -- state sequence signals
 
 	-- 'adder' implements a full adder, which is all we need to implement
-	-- N-bit addition in a bit serial architecture.
+	-- N-bit addition in a bit serial architecture. It is used in the instruction
+	-- and to increment the program counter.
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
 		sum  <= x xor y xor cin after delay;
@@ -110,24 +113,51 @@ architecture rtl of bcpu is
 
 	-- Obviously this does not synthesis, which is why synthesis is turned
 	-- off for the body of this function, it does make debugging much easier
-	-- though, we will be able to which instructions are executed and do so
-	-- by name. Hexadecimal would have been better than decimal, but we cannot
-	-- have everything.
+	-- though, we will be able to see which instructions are executed and do so
+	-- by name. 
 	procedure print_debug_info is 
-		function stringify(slv: in std_ulogic_vector) return string is
-		begin
-			return integer'image(to_integer(unsigned(slv)));
-		end function;
 		variable ll: line;
+
+		function hx(slv: in std_ulogic_vector) return string is -- std_ulogic_vector to hex string
+			constant cv: string := "0123456789ABCDEF";
+			constant qu: integer := slv'length  /  4;
+			constant rm: integer := slv'length mod 4;
+			variable rs: string(1 to qu);
+			variable sl: std_ulogic_vector(3 downto 0);
+		begin
+			assert rm = 0 severity failure;
+			for l in 0 to qu - 1 loop
+				sl := slv((l * 4) + 3 downto (l * 4));
+				rs(qu - l) := cv(to_integer(unsigned(sl)) + 1);
+			end loop;
+			return rs;
+		end function;
+
+		function yn(sl: std_ulogic; ch: character) return string is -- print a flag
+			variable rs: string(1 to 2) := "- ";
+		begin
+			if sl = '1' then
+				rs(1) := ch;
+			end if;
+			return rs;
+		end function;
 	begin
 		-- synthesis translate_off
 		if debug > 0 then
 			if c.state = EXECUTE and c.first then
-				write(ll, stringify(c.pc)    & ": ");
-				write(ll, cmd_t'image(cmd)   & " ");
-				write(ll, stringify(c.acc)   & " ");
-				write(ll, stringify(c.op)    & " ");
-				write(ll, stringify(c.flags) & " ");
+				write(ll, hx(c.pc)    & ": ");
+				write(ll, cmd_t'image(cmd)   & HT);
+				write(ll, hx(c.acc)   & " ");
+				write(ll, hx(c.op)    & " ");
+				write(ll, hx(c.flags) & " ");
+				write(ll, yn(c.flags(Cy),  'C'));
+				write(ll, yn(c.flags(Z),   'Z'));
+				write(ll, yn(c.flags(Ng),  'N'));
+				write(ll, yn(c.flags(PAR), 'P'));
+				write(ll, yn(c.flags(ROT), 'S'));
+				write(ll, yn(c.flags(R),   'R'));
+				write(ll, yn(c.flags(IND), 'I'));
+				write(ll, yn(c.flags(HLT), 'H'));
 				writeline(OUTPUT, ll);
 			end if;
 			if debug > 1 and last = '1' then
@@ -139,15 +169,15 @@ architecture rtl of bcpu is
 		-- synthesis translate_on
 	end procedure;
 begin
-	assert N >= 8                      report "CPU Width too small: N >= 8"   severity failure;
-	assert not (ie = '1' and oe = '1') report "input/output at the same time" severity failure;
-	assert not (ie = '1' and ae = '1') report "input whilst changing address" severity failure;
+	assert N >= 8                      report "CPU Width too small: N >= 8"    severity failure;
+	assert not (ie = '1' and oe = '1') report "input/output at the same time"  severity failure;
+	assert not (ie = '1' and ae = '1') report "input whilst changing address"  severity failure;
 	assert not (oe = '1' and ae = '1') report "output whilst changing address" severity failure;
 
 	adder (add1, add2, acin, ares, acout);                 -- shared adder
-	cmd         <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
-	last4       <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
-	last        <= c.dline(c.dline'high)     after delay;  -- processing last bit?
+	cmd   <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
+	last4 <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
+	last  <= c.dline(c.dline'high)     after delay;  -- processing last bit?
 
 	process (clk, rst) begin
 		if rst = '1' and asynchronous_reset then
@@ -159,9 +189,9 @@ begin
 				c.dline <= (others => '0') after delay;
 				c.state <= RESET after delay;
 			else
-				-- These are just assertions, they are not required for running, but
-				-- we can make sure there are no unexpected state transitions, and
-				-- report on the internal state.
+				-- These are just assertions/debug logging, they are not required for 
+				-- running, but we can make sure there are no unexpected state transitions,
+				-- and report on the internal state.
 				print_debug_info;
 				if c.state = RESET   and last = '1' then assert f.state = FETCH;   end if;
 				if c.state = LOAD    and last = '1' then assert f.state = ADVANCE; end if;
@@ -196,13 +226,19 @@ begin
 			assert bit_count(c.dline) = 1 report "missing dline bit";
 		end if;
 
-		-- The processor works by using a delay line to sequence actions,
-		-- the top four bits are used for the instruction (and if the highest
-		-- bit is set indirection is _not_ allowed), with the lowest twelve
-		-- bits as an operand to use as a literal value or an address.
+		-- The processor works by using a delay line (shift register) to 
+		-- sequence actions, the top four bits are used for the 
+		-- instruction (and if the highest bit is set indirection 
+		-- is _not_ allowed), with the lowest twelve bits as an operand 
+		-- to use as a literal value or an address.
 		--
 		-- As such, we will want to trigger actions when processing the first
 		-- bit, the last four bits and the last bit.
+		--
+		-- This delay line is used to save gates as opposed using a counter,
+		-- which would require an adder (but not a comparator - we could check
+		-- whether individual bits are set because all the comparisons are
+		-- against power of two values).
 		--
 		if last = '1' then
 			f.state <= c.choice after delay;
@@ -274,16 +310,17 @@ begin
 			end if;
 
 			-- We use the highest operand bit to determine whether an I/O operation
-			-- is taking place with iGET and iSET.
+			-- is taking place with iGET and iSET. This is set for other instructions,
+			-- however it is not actually used for them.
 			if c.op(c.op'high - 3) = '1' then
 				f.is_io <= true after delay;
 			else
 				f.is_io <= false after delay;
 			end if;
 
-			f.flags(Ng)  <= c.acc(c.acc'high) after delay;
+			f.flags(Ng)  <= c.acc(0) after delay; -- contains highest bit when 'last' is true
 
-			-- NB. 'f.choice' may be overwritten for INDIRECT
+			-- NB. 'f.choice' may be overwritten for INDIRECT.
 			   if c.flags(HLT) = '1' then
 				f.choice <= HALT after delay;
 			elsif c.flags(R) = '1' then
@@ -327,6 +364,9 @@ begin
 			if c.first then
 				f.dline(0)  <= '1'   after delay;
 				f.first     <= false after delay;
+				-- 'tcarry' is added to the program counter in the ADVANCE
+				-- state, instructions that affect the program counter clear
+				-- it (such as iJUMP, and iJUMPZ/iSET (conditionally).
 				f.tcarry    <= '1'   after delay;
 			else
 				case cmd is -- ALU
@@ -370,6 +410,10 @@ begin
 						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
+				-- We have two sets of LOAD/STORE instructions, one set which
+				-- optionally respects the indirect flag, and one set (the latter)
+				-- which never does. This allows us to perform direct LOAD/STORES
+				-- when the indirect flag is on.
 				when iLOAD =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
@@ -474,8 +518,16 @@ begin
 				f.acc <= i & c.acc(c.acc'high downto 1) after delay;
 			end if;
 		-- ADVANCE reuses our adder in iADD to add one to the program counter
-		-- this state should not be reached from iJUMPZ or iJUMP, or when
-		-- performing an iSET on the program counter.
+		-- this state *is* reached when we do a iJUMP, iJUMPZ or an iSET on the
+		-- program counter, those instructions clear the 'tcarry', which is
+		-- normally '1'.
+		--
+		-- Just an aside, apparently some historical computers used a
+		-- Linear Feed Back Shift Register instead of an adder to advance
+		-- the program counter, the tool-chain accounting for the non-sequential
+		-- jumps. They did this to save on a few gates. We will not save
+		-- anything in this design by doing that (and it would be a massive
+		-- pain to account for and debug).
 		when ADVANCE =>
 			f.choice <= FETCH after delay;
 			if c.first then

@@ -63,6 +63,8 @@ begin
 
 	clock_process: process
 		variable count: integer := 0;
+		variable ll: line;
+
 	begin
 		rst  <= '1';
 		stop <= false;
@@ -76,10 +78,12 @@ begin
 			count := count + 1;
 		end loop;
 		if halt = '1' then
-			report "CPU IN HALT STATE";
+			write(ll, string'("{HALT}"));
 		else
-			report "SIMULATION CYCLES RAN OUT";
+			write(ll, string'("{CYCLES}"));
 		end if;
+		writeline(OUTPUT, ll);
+
 		stop <= true;
 		wait;
 	end process;

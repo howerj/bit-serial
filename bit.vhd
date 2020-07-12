@@ -441,6 +441,17 @@ begin
 				-- We could use this if we need to extend the instruction set
 				-- for any reason. I cannot think of a good one that justifies the
 				-- cost of a new instruction. So this will remain blank for now.
+				--
+				-- Candidates for an instruction include:
+				--
+				-- * Arithmetic Right Shift
+				-- * Subtraction
+				-- * Swap Low/High Byte (may be difficult to implement)
+				--
+				-- However, this instruction may not have its indirection bit set,
+				-- This would not be a problem for the swap instruction. Alternatively
+				-- and 'add-constant' could be added.
+				-- 
 				when iJUMP =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;
@@ -455,6 +466,10 @@ begin
 						f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
 						f.choice <= FETCH after delay;
 					end if;
+				-- NB. We could probably eliminate these instructions by mapping
+				-- the registers into the memory address space, this would free
+				-- up another two instructions, and potentially simplify the CPU.
+				--
 				when iSET =>
 					if c.is_io then
 						ae     <=     '1' after delay;
@@ -487,9 +502,9 @@ begin
 					else
 						if c.op(0) = '0' then
 							f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
-							f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1) after delay;
+							f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1)   after delay;
 						else
-							f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1) after delay;
+							f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1)     after delay;
 							f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
 						end if;
 					end if;
@@ -536,6 +551,8 @@ begin
 			else
 				f.pc <= "0" & c.pc(c.pc'high downto 1) after delay;
 				add1 <= c.pc(0)  after delay;
+				-- A 'skip' facility could be made by optionally setting this to '1'
+				-- for the first cycle, incrementing the program counter by 2.
 				add2 <= '0'      after delay;
 				acin <= c.tcarry after delay;
 				f.pc(f.pc'high) <= ares  after delay;

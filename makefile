@@ -11,7 +11,7 @@ all: bit simulation
 
 run c.log out.hex: bit bit.hex
 	./bit tb.conf bit.hex out.hex 2> c.log
-	cat c.log
+	@#cat c.log
 
 diff: c.log vhdl.log
 	${DIFF} c.log vhdl.log

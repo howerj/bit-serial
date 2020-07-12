@@ -82,7 +82,10 @@ begin
 		else
 			write(ll, string'("{CYCLES}"));
 		end if;
-		writeline(OUTPUT, ll);
+	
+		if debug > 0 then
+			writeline(OUTPUT, ll);
+		end if;
 
 		stop <= true;
 		wait;

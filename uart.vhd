@@ -191,7 +191,7 @@ architecture structural of uart_top is
 
 	signal rx_ok, rx_nd, rx_push, rx_re: std_ulogic;
 	signal rx_pushed: std_ulogic_vector(rx_fifo_data'range);
-	signal tx_pop, tx_ok: std_ulogic;
+	signal tx_pop, tx_ok: std_ulogic := '0';
 	signal tx_popped: std_ulogic_vector(tx_fifo_data'range);
 	signal tx_fifo_empty_b, rx_fifo_full_b: std_ulogic;
 
@@ -201,9 +201,7 @@ architecture structural of uart_top is
 	signal rx_ok_buf: std_ulogic;
 	signal do, do_c, do_n: std_ulogic_vector(rx_fifo_data'range);
 	signal fail_c, fail_n: std_ulogic_vector(1 downto 0);
-	signal nd_c, nd_n: std_ulogic; -- new data
-
-
+	signal nd_c, nd_n: std_ulogic := '0'; -- new data
 begin
 	rx_ok_buf <= not (fail_c(0) or fail_c(1)) after g.delay;
 	rx_ok <= rx_ok_buf;
@@ -268,7 +266,8 @@ begin
 				  we   => tx_fifo_we,
 				  re   => tx_pop,
 				  do   => tx_popped,
-				  full => tx_fifo_full, empty => tx_fifo_empty_b);
+				  full => tx_fifo_full, 
+				  empty => tx_fifo_empty_b);
 
 		rx_fifo_full <=                         rx_fifo_full_b;
 		rx_push      <= rx_nd and rx_ok and not rx_fifo_full_b;

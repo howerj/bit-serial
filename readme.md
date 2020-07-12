@@ -351,18 +351,31 @@ assembler.
   code, this could be done by removing the indirection options, this would
   make programming the CPU *much* more difficult without the correct tool-chain
   support.
-* In principle interrupts could be added in the following way:
-  - During any cycle an interrupt is noted and latched in.
-  - When the processor gets back into the FETCH state it checks if
-  interrupts are enabled, if they are then current program counter would
-  need to be exchanged with a fixed memory location (say 0xFFF), if the
-  JUMP instruction was changed to be the opcode 0xF, then the current
-  opcode could be replaced with all ones. A STORE of the current PC to
-  0xFFF would also need to be arranged.
-  - As an added extra, you could configure the processor to wake up
-  out of the halt state in the event of an interrupt if interrupts are
-  enabled. Alternatively, this could be the only interrupt mechanism
-  allowed, which would be trivial to add.
+* There are alternative CPU designs and instructions sets that might result
+  in a CPU that is the same size but be easier to program; these include a
+  nibble-oriented CPU (4 instructions packed into a 16-bit word), a stack
+  machine, an instruction set in which a single bit is reserved for indirection
+  (limiting the current design to only 8-instructions), a CPU with two
+  registers as opposed to just one, or even a CPU that whilst difficult to
+  program in itself easily lends itself to abstractions. All these things
+  are for different projects however. We could remove some instructions from
+  the current set if we can map the registers into memory space like the I/O
+  is. 
+
+An example alternative instruction set is:
+
+* LOAD {Memory, I/O, Registers PC/Flags}
+* SAVE {Memory, I/O, Registers PC/Flags}
+* JMPZ, Jump if accumulator is zero
+* ADDC, Add with Carry
+* BOR,  Bitwise Or
+* BAND, Bitwise And
+* BXOR, Bitwise Xor
+* ROTL, Rotate Left
+
+These 8-instructions would be complimented with an indirection bit on each
+instruction. This instruction set has its advantages, and disadvantages.
+
 
 # References / Appendix
 

@@ -16,6 +16,7 @@ end tb;
 architecture testing of tb is
 	constant g: common_generics           := default_settings;
 	constant clock_period:       time     := 1000 ms / g.clock_frequency;
+	constant baud:               positive := 115200 * 10; -- speed up TX/RX for simulation
 	shared variable clocks:      integer  := 10000;
 	shared variable forever:     integer  := 0;
 	shared variable debug:       integer  := 1;
@@ -51,6 +52,7 @@ begin
 			g          => g,
 			file_name  => "bit.hex",
 			N          => N,
+			baud       => baud,
 			debug      => debug)
 		port map (
 			clk  => clk, 

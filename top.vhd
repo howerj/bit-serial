@@ -14,6 +14,7 @@ entity top is
 		g:             common_generics := default_settings;
 		file_name:     string          := "bit.hex";
 		N:             positive        := 16;
+		baud:          positive        := 115200;
 		debug:         natural         := 0; -- will not synthesize if greater than zero (debug off)
 		use_uart_fifo: boolean         := false
 	);
@@ -41,6 +42,7 @@ begin
 			file_name     => file_name,
 			W             => W,
 			N             => N,
+			baud          => baud,
 			use_uart_fifo => use_uart_fifo)
 		port map (
 			clk => clk, rst => rst,

@@ -157,9 +157,9 @@ use work.util.common_generics;
 
 entity uart_top is
 	generic (
-		g: common_generics; 
-		baud: positive := 115200; 
-		format: std_ulogic_vector(7 downto 0) := uart_8N1;
+		g:        common_generics; 
+		baud:     positive := 115200; 
+		format:   std_ulogic_vector(7 downto 0) := uart_8N1;
 		use_fifo: boolean := false);
 	port (
 		clk:    in std_ulogic;
@@ -290,7 +290,7 @@ begin
 			clk    => clk,
 			rst    => rst,
 			we     => clock_reg_tx_we,
-			cnt    => reg,  -- 0x32/50 is 152000 @ 100MHz clk
+			cnt    => reg,  -- 0x32/50 is 1152000 @ 100MHz clk
 			cr     => tx_cr,
 			sample => tx_sample,
 			baud   => tx_baud);

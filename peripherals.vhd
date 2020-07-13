@@ -15,6 +15,7 @@ entity peripherals is
 	generic (
 		g:             common_generics;
 		file_name:     string;
+		baud:          positive;
 		W:             positive;
 		N:             positive;
 		use_uart_fifo: boolean);
@@ -82,7 +83,7 @@ begin
 	reg          <= c.r_i(reg'range);
 
 	uart: entity work.uart_top
-		generic map (g => g, use_fifo => use_uart_fifo)
+		generic map (g => g, baud => baud, use_fifo => use_uart_fifo)
 		port map(
 			clk => clk, rst => rst, 
 

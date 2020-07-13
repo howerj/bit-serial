@@ -19,7 +19,9 @@ References:
 
 only forth definitions hex
 
-wordlist constant meta
+wordlist constant meta.1
+wordlist constant target.1
+wordlist constant assembler.1
 
 : (order) ( w wid*n n -- wid*n w n )
    dup if
@@ -28,8 +30,8 @@ wordlist constant meta
 : -order ( wid -- ) get-order (order) nip set-order ;
 : +order ( wid -- ) dup >r -order get-order r> swap 1+ set-order ;
 
-get-current meta set-current drop
-meta +order
+get-current meta.1 set-current drop
+meta.1 +order
 
 000a constant =lf
    2 constant =cell
@@ -41,7 +43,9 @@ create tflash size cells here over erase allot
 
 variable tdp
 variable tep
+variable tlast
 size =cell - tep !
+0 tlast !
 
 : there tdp @ ;
 : tc! tflash + c! ;
@@ -54,12 +58,28 @@ size =cell - tep !
 : $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
 : tallot tdp +! ;
 : org tdp ! ;
+: thead 
+  talign 
+  tlast @ t, 
+  there  tlast !
+  parse-word dup tc, 0 ?do count tc, loop drop talign ;
 
 : hex# ( u -- addr len )  0 <# base @ >r hex =lf hold # # # # r> base ! #> ;
 : save-hex ( <name> -- )
   parse-word w/o create-file throw
   there 0 do i t@  over >r hex# r> write-file throw =cell +loop
    close-file throw ;
+: save-target ( <name> -- )
+  parse-word w/o create-file throw >r
+   tflash there r@ write-file throw r> close-file ;
+: twords
+   cr tlast @
+   begin
+      dup tflash + count 1f and type space =cell - t@
+   ?dup 0= until ;
+: .stat ." words> " twords cr ." used> " there u. cr ;
+: .end only forth definitions decimal ;
+
 
 : tvar create there , t, does> @ ;
 : label: create there , does> @ ;
@@ -94,12 +114,13 @@ size =cell - tep !
 : flags? 1 iGET ;
 : flags! 1 iSET ;
 : clr 0 iLITERAL ;
-: halt flgHlt iLITERAL flags! ;
-: reset flgR   iLITERAL flags! ;
+: halt! flgHlt iLITERAL flags! ;
+: reset! flgR   iLITERAL flags! ;
 : branch 2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
 
+\ TODO Place these in an assembler vocabulary
 : abegin there ;
 : auntil ?branch ;
 : aagain branch ;
@@ -159,20 +180,33 @@ label: next
 	ip iSTORE-C
 	w iLOAD-C pc!
 
-: a: label: ;
-: ;a next branch ;
-
+\ TODO: Implement these, they are required for normal, non-assembler, words
 label: {nest} ( accumulator must contain '0 iGET' )
 
 label: unnest
 	
-
-: t: label: 0 iGET {nest} branch ;
-: ;t unnest branch ;
-	
 : nest 0 iGET {nest} branch ;
 
-a: opPush
+\ : t: label: 0 iGET {nest} branch ;
+\ : ;t unnest branch ;
+: t:
+  >in @ thead >in !
+    get-current >r target.1 set-current create
+    r> set-current CAFEBABE talign there , 
+    0 iGET {nest} branch
+    does> @ branch ( really a call ) ;
+: t; CAFEBABE <> if abort" unstructured" then unnest branch ; 
+
+: a: 
+  >in @ thead >in !
+  get-current >r target.1 set-current create
+   r> set-current talign there , does> @ branch  ;
+: ;a next branch ;
+: ha: create talign there , does> @ branch ;
+
+target.1 +order
+
+ha: opPush
 	++sp
 	tos iLOAD-C
 	sp iSTORE
@@ -186,56 +220,56 @@ a: opPush
 	ip iSTORE-C
 	;a
 
-a: opJump
+ha: opJump
 	ip iLOAD-C vcell iADD ip iSTORE-C
 	ip iLOAD
 	pc!
 
-a: opJumpZ
+ha: opJumpZ
 	tos iLOAD-C
 	w iSTORE-C
 	--sp
 	sp iLOAD
 	tos iSTORE
 	w iLOAD-C
-	opJump 2/ iJUMPZ
+	' opJump body> @ 2/ iJUMPZ
 	ip iLOAD-C vcell iADD ip iSTORE-C
 	;a
 
-a: opHalt
-	halt
+a: halt
+	halt!
 
-a: opBye
-	reset
+a: bye
+	reset!
 
-a: opAnd
+a: and
 	sp iLOAD
 	tos 2/ iAND
 	tos iSTORE-C
 	--sp
 	;a
 
-a: opOr
+a: or
 	sp iLOAD
 	tos 2/ iOR
 	tos iSTORE-C
 	--sp
 	;a
 
-a: opXor
+a: xor 
 	sp iLOAD
 	tos 2/ iXOR
 	tos iSTORE-C
 	--sp
 	;a
 
-a: opInvert
+a: invert
 	tos iLOAD-C
 	set 2/ iXOR
 	tos iSTORE-C
 	;a
 
-a: opAdd
+a: +
 	sp iLOAD
 	tos 2/ iADD
 	tos iSTORE-C
@@ -247,11 +281,11 @@ a: opAdd
 \ addresses and not on character addresses like @/! would be expected to
 \ work with.
 
-a: opLOAD
+a: opLoad
 	tos iLOAD
 	;a
 
-a: opSTORE
+a: opStore
 	sp iLOAD
 	tos iSTORE
 	--sp
@@ -260,19 +294,40 @@ a: opSTORE
 	--sp
 	;a
 
-a: op1+
+a: dup
+	++sp
+	tos iLOAD-C
+	sp iSTORE
+	;a
+
+a: drop
+	sp iLOAD
+	tos iSTORE-C
+	--sp
+	;a
+
+a: swap
+	sp iLOAD
+	w iSTORE-C
+	tos iLOAD-C
+	sp iSTORE
+	w iLOAD-C
+	tos iSTORE-C
+	;a
+
+a: 1+
 	tos iLOAD-C
 	1 iADD
 	tos iSTORE-C
 	;a
 
-a: op1-
+a: 1-
 	tos iLOAD-C
 	set 2/ iADD
 	tos iSTORE-C
 	;a
 
-a: op>r
+a: >r
 	++rp
 	tos iLOAD-C
 	rp iSTORE
@@ -281,7 +336,7 @@ a: op>r
 	--sp
 	;a
 	
-a: opr>
+a: r>
 	--rp
 	rp iLOAD
 	w iSTORE-C
@@ -289,6 +344,14 @@ a: opr>
 	tos iLOAD-C
 	sp iSTORE
 	w iLOAD-C
+	tos iSTORE-C
+	;a
+
+a: r@
+	++sp
+	tos iLOAD-C
+	sp iSTORE
+	rp iLOAD-C
 	tos iSTORE-C
 	;a
 
@@ -334,32 +397,38 @@ a: rx ( -- ch )
 	
 	;a
 
-\ Also need: swap drop dup um+ >r r> r@ r sp lshift rshift opBranch opBranch?
-\ 'lshift' and 'rshift' will need to convert the shift amount 
+\ Also need: swap drop dup um+ r@ r sp lshift rshift opBranch opBranch?
+\ 'lshift' and 'rshift' will need to convert the shift amount, also need the
+\ following words to implement a complete(ish) Forth interpreter; parse, word,
+\ cr, >number, <#, #, #S, #>, ., .s, ",", if, else, then, begin, until, [,
+\ ], \, (, .", :, ;, here, (and perhaps a few more...).
 
-: lit opPush branch t, ;
-: char  char opPush branch t, ;
+: lit opPush t, ;
+: char  char opPush t, ;
 
+\ TODO: Should remove the need to call 'branch' after use of word, can
+\ use "t'" to get "body>" if needs be.
 label: cold
 	there 2/ <cold> t!
 	
-	char H tx! branch
-	char E tx! branch
-	char L tx! branch
-	char L tx! branch
-	char O tx! branch
+	char H tx! 
+	char E tx! 
+	char L tx! 
+	char L tx! 
+	char O tx! 
 
-	D lit tx! branch
-	A lit tx! branch
+	D lit tx! 
+	A lit tx!
 	
 	5 lit
 	6 lit
-	opAdd branch
-	opHalt branch
+	+
+	halt 
 
 save-hex bit.hex
-
-only forth definitions decimal
+save-target bit.bin
+.stat
+.end
 .( DONE ) cr
 bye
 

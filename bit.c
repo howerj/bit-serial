@@ -11,13 +11,11 @@
 #include <stdarg.h>
 #include <limits.h>
 
-#define MSIZE            (4096u)
-#define MAX_VARS         (256u)
-#define NELEM(X)         (sizeof(X)/sizeof(X[0]))
-#define MAX_FILE         (128*1024)
-#define MAX_NAME         (32)
+#define MSIZE    (4096u)
+#define NELEM(X) (sizeof(X)/sizeof(X[0]))
 
 typedef uint16_t mw_t; /* machine word */
+
 typedef struct { 
 	mw_t pc, acc, flg, m[MSIZE]; 
 	/* io */ 
@@ -27,6 +25,7 @@ typedef struct {
 	int forever;
 	FILE *trace;
 } bcpu_t;
+
 enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 
 static void die(const char *fmt, ...) {
@@ -194,10 +193,12 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 			pc = 0;
 			acc = 0;
 			flg = 0;
+			continue;
 		}
 		flg &= ~((1u << fZ) | (1u << fNg) | (1u << fPAR));
 		flg |= ((!acc) << fZ);              /* set zero flag     */
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
+		flg &= ~(1u << fPAR);
 		flg |= ((bits(acc) & 1u)) << fPAR;  /* set parity bit    */
 
 		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
@@ -232,7 +233,7 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 			break;
 		case 0xF:                                               /* GET */
 			if (op1 & 0x0800) { acc = bload(b, 0x8000u | op1); } 
-			else { if (op1 & 1) acc = flg; else acc = pc; } 
+			else { if (op1 & 1) acc = flg; else acc = pc - 1u; } 
 			break;
 		default: r = -1; goto halt;
 		}

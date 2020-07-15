@@ -77,7 +77,9 @@ size =cell - tep !
    begin
       dup tflash + count 1f and type space =cell - t@
    ?dup 0= until ;
-: .stat ." words> " twords cr ." used> " there u. cr ;
+: .h base @ >r hex     u. r> base ! ;
+: .d base @ >r decimal u. r> base ! ;
+: .stat ." words> " twords cr ." used> " there dup ." 0x" .h ." / " .d cr ;
 : .end only forth definitions decimal ;
 
 
@@ -120,16 +122,16 @@ size =cell - tep !
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
 
-\ TODO Place these in an assembler vocabulary
+\ TODO Place these in an assembler vocabulary, and drop the 'a' prefix
 : abegin there ;
 : auntil ?branch ;
 : aagain branch ;
-\ : aif there 0 ?branch ;
-\ : askip there 0 branch ;
-\ : athen abegin 2/ over t@ or swap t! ;
-\ : aelse askip swap athen ;
-\ : awhile aif swap ;
-\ : arepeat branch athen ;
+: aif there 0 ?branch ;
+: askip there 0 branch ;
+: athen abegin 2/ over t@ or swap t! ;
+: aelse askip swap athen ;
+: awhile aif swap ;
+: arepeat branch athen ;
 
 0 t,  \ must be 0 ('0 iOR'  works in either indirect or direct mode)
 1 t,  \ must be 1 ('1 iADD' works in either indirect or direct mode)
@@ -145,6 +147,7 @@ FFFF tvar set \ all bits set, -1
 0 tvar tos    \ top of stack
 0 tvar h      \ dictionary pointer
 0 tvar pwd    \ previous word pointer
+0 tvar state  \ compiler state
 label: RSTACK \ Return stack start, grows upwards
 =stksz tallot
 label: VSTACK \ Variable stack *end*, grows downwards
@@ -182,28 +185,44 @@ label: next
 
 \ TODO: Implement these, they are required for normal, non-assembler, words
 label: {nest} ( accumulator must contain '0 iGET' )
+	w iSTORE-C ( store '0 iGET' into working pointer )
+	++rp
+	ip iLOAD-C
+	rp iSTORE
+	w iLOAD-C
+	1 iADD
+	ip iSTORE-C
+	next branch
 
-label: unnest
+label: {unnest}
+	rp iLOAD
+	w iSTORE-C
+	--rp
+	w iLOAD-C
+	ip iSTORE-C
+	next branch
 	
 : nest 0 iGET {nest} branch ;
+: unnest {unnest} branch ;
 
-\ : t: label: 0 iGET {nest} branch ;
-\ : ;t unnest branch ;
 : t:
   >in @ thead >in !
     get-current >r target.1 set-current create
     r> set-current CAFEBABE talign there , 
-    0 iGET {nest} branch
+    nest
     does> @ branch ( really a call ) ;
-: t; CAFEBABE <> if abort" unstructured" then unnest branch ; 
+: t; CAFEBABE <> if abort" unstructured" then unnest ; 
 
 : a: 
   >in @ thead >in !
   get-current >r target.1 set-current create
-   r> set-current talign there , does> @ branch  ;
-: ;a next branch ;
-: ha: create talign there , does> @ branch ;
+   r> set-current ( CAFED00D ) talign there , does> @ branch  ;
+: a; ( CAFED00D <> if abort" unstructured" then ) next branch ;
+: ha:
+     ( CAFED00D <> if abort" unstructured" then )
+     create talign there , does> @ branch ;
 
+\ TODO: hide/unhide vocabs depending in t:/a:/ha:
 target.1 +order
 
 ha: opPush
@@ -218,7 +237,7 @@ ha: opPush
 	ip iLOAD-C
 	vcell iADD
 	ip iSTORE-C
-	;a
+	a;
 
 ha: opJump
 	ip iLOAD-C vcell iADD ip iSTORE-C
@@ -234,7 +253,7 @@ ha: opJumpZ
 	w iLOAD-C
 	' opJump body> @ 2/ iJUMPZ
 	ip iLOAD-C vcell iADD ip iSTORE-C
-	;a
+	a;
 
 a: halt
 	halt!
@@ -247,27 +266,27 @@ a: and
 	tos 2/ iAND
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 
 a: or
 	sp iLOAD
 	tos 2/ iOR
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 
 a: xor 
 	sp iLOAD
 	tos 2/ iXOR
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 
 a: invert
 	tos iLOAD-C
 	set 2/ iXOR
 	tos iSTORE-C
-	;a
+	a;
 
 a: +
 	sp iLOAD
@@ -275,36 +294,38 @@ a: +
 	tos iSTORE-C
 	fdefault
 	--sp
-	;a
+	a;
 
-\ opLOAD/opSTORE are *not* @/! equivalents as they operate on raw cell 
-\ addresses and not on character addresses like @/! would be expected to
-\ work with.
+\ NOTE: @/! cannot perform I/O operations, we will need new words for that, as
+\ they cannot write to the top bit.
 
-a: opLoad
+a: @
+	tos iLOAD-C
+	1 iRSHIFT
 	tos iLOAD
-	;a
+	a;
 
-a: opStore
+a: !
 	sp iLOAD
+	1 iRSHIFT
 	tos iSTORE
 	--sp
 	sp iLOAD
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 
 a: dup
 	++sp
 	tos iLOAD-C
 	sp iSTORE
-	;a
+	a;
 
 a: drop
 	sp iLOAD
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 
 a: swap
 	sp iLOAD
@@ -313,19 +334,19 @@ a: swap
 	sp iSTORE
 	w iLOAD-C
 	tos iSTORE-C
-	;a
+	a;
 
 a: 1+
 	tos iLOAD-C
 	1 iADD
 	tos iSTORE-C
-	;a
+	a;
 
 a: 1-
 	tos iLOAD-C
 	set 2/ iADD
 	tos iSTORE-C
-	;a
+	a;
 
 a: >r
 	++rp
@@ -334,7 +355,7 @@ a: >r
 	sp iLOAD
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 	
 a: r>
 	--rp
@@ -345,7 +366,7 @@ a: r>
 	sp iSTORE
 	w iLOAD-C
 	tos iSTORE-C
-	;a
+	a;
 
 a: r@
 	++sp
@@ -353,7 +374,7 @@ a: r@
 	sp iSTORE
 	rp iLOAD-C
 	tos iSTORE-C
-	;a
+	a;
 
 1000 tvar tx-full-mask
 2000 tvar tx-write-mask
@@ -371,7 +392,7 @@ a: tx! ( ch -- )
 	sp iLOAD
 	tos iSTORE-C
 	--sp
-	;a
+	a;
 
 100 tvar rx-empty-mask
 400 tvar rx-re-mask
@@ -395,16 +416,51 @@ a: rx ( -- ch )
 	low-byte-mask 2/ iAND
 	tos iSTORE-C
 	
-	;a
+	a;
+
+t: rx? ( -- ch -1 | 0 )
+	t;
 
 \ Also need: swap drop dup um+ r@ r sp lshift rshift opBranch opBranch?
 \ 'lshift' and 'rshift' will need to convert the shift amount, also need the
 \ following words to implement a complete(ish) Forth interpreter; parse, word,
 \ cr, >number, <#, #, #S, #>, ., .s, ",", if, else, then, begin, until, [,
-\ ], \, (, .", :, ;, here, (and perhaps a few more...).
+\ ], \, (, .", :, ;, here, <, >, u>, u<, =, <>, (and perhaps a few more...).
 
 : lit opPush t, ;
 : char  char opPush t, ;
+
+a: here  
+	++sp
+	tos iLOAD-C
+	sp iSTORE
+	h iLOAD
+	tos iSTORE-C 
+	a;
+
+a: [ 0 iLITERAL state iSTORE-C a; ( immediate )
+a: ] 1 iLITERAL state iSTORE-C a; 
+
+t: cr D lit tx! A lit tx! t;
+t: ok char O tx! char K tx! cr t;
+t: interpret t;
+t: type t;
+t: . t;
+t: find t;
+t: parse t;
+t: query t;
+t: number t;
+t: digit t;
+t: : t;
+t: ; t;
+t: immediate t;
+t: if t;
+t: else t;
+t: then t;
+t: begin t;
+t: again t;
+t: until t;
+t: exit t;
 
 \ TODO: Should remove the need to call 'branch' after use of word, can
 \ use "t'" to get "body>" if needs be.
@@ -416,13 +472,12 @@ label: cold
 	char L tx! 
 	char L tx! 
 	char O tx! 
-
-	D lit tx! 
-	A lit tx!
+	cr
 	
 	5 lit
 	6 lit
 	+
+	ok
 	halt 
 
 save-hex bit.hex

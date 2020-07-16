@@ -72,13 +72,13 @@ size =cell - tep !
 : save-target ( <name> -- )
   parse-word w/o create-file throw >r
    tflash there r@ write-file throw r> close-file ;
+: .h base @ >r hex     u. r> base ! ;
+: .d base @ >r decimal u. r> base ! ;
 : twords
    cr tlast @
    begin
       dup tflash + count 1f and type space =cell - t@
    ?dup 0= until ;
-: .h base @ >r hex     u. r> base ! ;
-: .d base @ >r decimal u. r> base ! ;
 : .stat ." words> " twords cr ." used> " there dup ." 0x" .h ." / " .d cr ;
 : .end only forth definitions decimal ;
 
@@ -148,6 +148,8 @@ FFFF tvar set \ all bits set, -1
 0 tvar h      \ dictionary pointer
 0 tvar pwd    \ previous word pointer
 0 tvar state  \ compiler state
+0 tvar hld    \ hold space pointer
+10 tvar base  \ input/output radix, default = 16
 label: RSTACK \ Return stack start, grows upwards
 =stksz tallot
 label: VSTACK \ Variable stack *end*, grows downwards
@@ -157,6 +159,12 @@ RSTACK          2/ tvar rp  \ return stack pointer
 0 tvar #tib    \ terminal input buffer
 label: TERMBUF
 =buf   tallot
+1000 tvar tx-full-mask
+2000 tvar tx-write-mask
+100 tvar rx-empty-mask
+400 tvar rx-re-mask
+FF  tvar low-byte-mask
+
 
 : fdefault flgInd iLITERAL flags! ;
 : vcell 1 ( cell '1' should contain '1' ) ;
@@ -179,18 +187,17 @@ label: next
 	ip iLOAD-C
 	w iSTORE-C
 	ip iLOAD-C
-	vcell iADD
+	1 iADD
 	ip iSTORE-C
 	w iLOAD-C pc!
 
-\ TODO: Implement these, they are required for normal, non-assembler, words
 label: {nest} ( accumulator must contain '0 iGET' )
 	w iSTORE-C ( store '0 iGET' into working pointer )
 	++rp
 	ip iLOAD-C
 	rp iSTORE
 	w iLOAD-C
-	1 iADD
+	2 iADD
 	ip iSTORE-C
 	next branch
 
@@ -234,13 +241,11 @@ ha: opPush
 	w iSTORE-C
 	w iLOAD
 	tos iSTORE-C
-	ip iLOAD-C
-	vcell iADD
-	ip iSTORE-C
+	ip iLOAD-C 1 iADD ip iSTORE-C
 	a;
 
 ha: opJump
-	ip iLOAD-C vcell iADD ip iSTORE-C
+	ip iLOAD-C 1 iADD ip iSTORE-C
 	ip iLOAD
 	pc!
 
@@ -249,11 +254,21 @@ ha: opJumpZ
 	w iSTORE-C
 	--sp
 	sp iLOAD
-	tos iSTORE
+	tos iSTORE-C
 	w iLOAD-C
 	' opJump body> @ 2/ iJUMPZ
-	ip iLOAD-C vcell iADD ip iSTORE-C
+	ip iLOAD-C 1 iADD ip iSTORE-C
 	a;
+
+: begin there ;
+: until opJumpZ 2/ t, ;
+: again opJump 2/ t, ;
+: if opJumpZ there 0 t, ;
+\ : skip there branch ;
+\ : then begin 2/ over t@ or swap t! ;
+\ : else skip swap then ;
+\ : while if swap ;
+\ : repeat branch then ;
 
 a: halt
 	halt!
@@ -302,18 +317,33 @@ a: +
 a: @
 	tos iLOAD-C
 	1 iRSHIFT
+	tos iSTORE-C
 	tos iLOAD
 	a;
 
 a: !
 	sp iLOAD
 	1 iRSHIFT
+	tos iSTORE-C
 	tos iSTORE
 	--sp
 	sp iLOAD
 	tos iSTORE-C
 	--sp
 	a;
+
+( a: c@
+	tos iLOAD-C
+	1 iAND zero? aif
+
+	aelse
+
+	athen
+	
+	a;
+
+a: c!
+	a; )
 
 a: dup
 	++sp
@@ -376,8 +406,7 @@ a: r@
 	tos iSTORE-C
 	a;
 
-1000 tvar tx-full-mask
-2000 tvar tx-write-mask
+
 a: tx! ( ch -- )
 	\ wait until not full
 	abegin
@@ -393,10 +422,6 @@ a: tx! ( ch -- )
 	tos iSTORE-C
 	--sp
 	a;
-
-100 tvar rx-empty-mask
-400 tvar rx-re-mask
-FF  tvar low-byte-mask
 
 \ TODO: rx? for a non-blocking rx
 a: rx ( -- ch )
@@ -418,8 +443,8 @@ a: rx ( -- ch )
 	
 	a;
 
-t: rx? ( -- ch -1 | 0 )
-	t;
+\ t: rx? ( -- ch -1 | 0 )
+\	t;
 
 \ Also need: swap drop dup um+ r@ r sp lshift rshift opBranch opBranch?
 \ 'lshift' and 'rshift' will need to convert the shift amount, also need the
@@ -440,45 +465,60 @@ a: here
 
 a: [ 0 iLITERAL state iSTORE-C a; ( immediate )
 a: ] 1 iLITERAL state iSTORE-C a; 
-
+a: 0= tos iLOAD-C zero? aif set iLOAD-C aelse 0 iLOAD-C athen tos iSTORE-C a;
+t: = xor 0= t; 
+t: <> = 0= t;
 t: cr D lit tx! A lit tx! t;
 t: ok char O tx! char K tx! cr t;
+a: um+ a;
 t: interpret t;
 t: type t;
+\ TODO: Hex only numeric input/output (only requires power of 2 division)
+\ TODO: Implement division/multiplication
 t: . t;
 t: find t;
 t: parse t;
 t: query t;
 t: number t;
 t: digit t;
+t: emit tx! t;
 t: : t;
 t: ; t;
 t: immediate t;
-t: if t;
-t: else t;
-t: then t;
-t: begin t;
-t: again t;
-t: until t;
-t: exit t;
+\ t: if t;
+\ t: else t;
+\ t: then t;
+\ t: begin t;
+\ t: again t;
+\ t: until t;
+\ t: exit t;
 
 \ TODO: Should remove the need to call 'branch' after use of word, can
 \ use "t'" to get "body>" if needs be.
-label: cold
+
+
+t: cold
 	there 2/ <cold> t!
-	
-	char H tx! 
-	char E tx! 
-	char L tx! 
-	char L tx! 
-	char O tx! 
-	cr
+
+	\ 0 lit
+	begin
+		char H emit
+		char E emit
+		char L emit
+		char L emit
+		char O emit
+		cr
+		\ dup 1- 0=
+		1 lit
+	until
+	drop
 	
 	5 lit
 	6 lit
 	+
 	ok
 	halt 
+	t;
 
 save-hex bit.hex
 save-target bit.bin

@@ -13,12 +13,12 @@ use work.uart_pkg.all;
 
 entity peripherals is 
 	generic (
-		g:             common_generics;
-		file_name:     string;
-		baud:          positive;
-		W:             positive;
-		N:             positive;
-		use_uart_fifo: boolean);
+		g:                common_generics;
+		file_name:        string;
+		baud:             positive;
+		W:                positive;
+		N:                positive;
+		use_uart_fifo:    boolean);
 	port (
 		clk:         in std_ulogic;
 		rst:         in std_ulogic;
@@ -75,12 +75,12 @@ architecture rtl of peripherals is
 	signal io_addr: std_ulogic_vector(2 downto 0);
 begin
 	io           <= c.r_a(c.r_a'high) = '1' and ae = '0' after g.delay;
-	io_addr      <= c.r_a(io_addr'range);
+	io_addr      <= c.r_a(io_addr'range) after g.delay;
 	write        <= true when (c.r_ie and (c.r_ie xor f.r_ie)) = '1' else false after g.delay;
-	ld           <= c.r_ld after g.delay;
-	o            <= c.r_o(0) after g.delay;
-	tx_fifo_data <= c.r_i(tx_fifo_data'range);
-	reg          <= c.r_i(reg'range);
+	ld           <= c.r_ld                    after g.delay;
+	o            <= c.r_o(0)                  after g.delay;
+	tx_fifo_data <= c.r_i(tx_fifo_data'range) after g.delay;
+	reg          <= c.r_i(reg'range)          after g.delay;
 
 	uart: entity work.uart_top
 		generic map (g => g, baud => baud, use_fifo => use_uart_fifo)
@@ -158,11 +158,11 @@ begin
 				case io_addr is
 				when "000" => f.r_o(sw'range) <= sw after g.delay;
 				when "001" =>
-					f.r_o(7 downto 0) <= rx_fifo_data;
-					f.r_o(8)          <= rx_fifo_empty;
-					f.r_o(9)          <= rx_fifo_full;
-					f.r_o(11)         <= tx_fifo_empty;
-					f.r_o(12)         <= tx_fifo_full;
+					f.r_o(7 downto 0) <= rx_fifo_data  after g.delay;
+					f.r_o(8)          <= rx_fifo_empty after g.delay;
+					f.r_o(9)          <= rx_fifo_full  after g.delay;
+					f.r_o(11)         <= tx_fifo_empty after g.delay;
+					f.r_o(12)         <= tx_fifo_full  after g.delay;
 				when "010" =>
 				when "011" =>
 				when "100" =>

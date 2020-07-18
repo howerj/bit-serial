@@ -302,14 +302,30 @@ takes things to the extreme in one direction only.
 The core should be written to be portable to different [FPGA][]s, however the
 author only tests what they have available (Xilinx, Spartan-6).
 
-## The H2
+* The H2
 
-Another small core, based on the J1. This core executes quite quickly and uses
+Another small core, based on the J1. This core executes quite quickly (1
+instruction per CPU cycle) and uses
 few resources, although much more than this core. The instruction set is quite
 dense and allows for higher level programming than just using straight
-assembler.
+assembler. See <https://github.com/howerj/forth-cpu>.
 
-* <https://github.com/howerj/forth-cpu>
+This CPU core has deeper stacks, more instructions, and interrupts, which the
+original J1 core lacks. It is also written in VHDL instead of Verilog.
+
+* Tiny CPU in a CPLD 
+
+This is a 8-bit CPU designed to fit in the limited resources of a CPLD:
+
+See <https://www.bigmessowires.com/cpu-in-a-cpld/> and
+<https://www.bigmessowires.com/tinycpufiles.zip>.
+
+It is written in Verilog, it is based on the 6502, implementing a subset of its
+instructions. It is probably easier to directly program than this bit-serial
+CPU, and roughly the same size (although a direct comparison is difficult).  
+It can address less memory (1K) without bank-switching. There is also a
+different version made with 7400 series logic gates
+<https://www.bigmessowires.com/nibbler/>.
 
 # Project Goals
 
@@ -319,16 +335,14 @@ assembler.
 * [x] Implement the system on an FPGA
   * [x] Implement the CPU
   * [x] Implement a memory and peripheral interface
-  * [ ] Add an interrupt request mechanism?
   * [ ] Add a counter/timer peripheral
-  * [ ] ...that can cause an interrupt to the core
+  * [ ] Make peripherals optional
 * [x] Create a tiny test program
 * [x] Verify program works in hardware
 * [ ] Implement a tiny Forth on the CPU
 * [ ] Use in other VHDL projects
   * [ ] As a low speed UART (Bit-Banged)
   * [ ] As a VT100 interface for a VGA Text Terminal in a CGA graphics card
-* [ ] Simplify the CPU
 
 # Notes
 
@@ -361,21 +375,6 @@ assembler.
   are for different projects however. We could remove some instructions from
   the current set if we can map the registers into memory space like the I/O
   is. 
-
-An example alternative instruction set is:
-
-* LOAD {Memory, I/O, Registers PC/Flags}
-* SAVE {Memory, I/O, Registers PC/Flags}
-* JMPZ, Jump if accumulator is zero
-* ADDC, Add with Carry
-* BOR,  Bitwise Or
-* BAND, Bitwise And
-* BXOR, Bitwise Xor
-* ROTL, Rotate Left
-
-These 8-instructions would be complimented with an indirection bit on each
-instruction. This instruction set has its advantages, and disadvantages.
-
 
 # References / Appendix
 

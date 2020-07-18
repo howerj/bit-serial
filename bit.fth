@@ -55,7 +55,7 @@ size =cell - tep !
 : talign there 1 and tdp +! ;
 : tc, there tc! 1 tdp +! ;
 : t, there t! 2 tdp +! ;
-: $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
+: $literal" [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
 : tallot tdp +! ;
 : org tdp ! ;
 : thead 
@@ -82,10 +82,10 @@ size =cell - tep !
 : .stat ." words> " twords cr ." used> " there dup ." 0x" .h ." / " .d cr ;
 : .end only forth definitions decimal ;
 
+: tvar   create there , t, does> @ ;
+: label: create there ,    does> @ ;
 
-: tvar create there , t, does> @ ;
-: label: create there , does> @ ;
-
+\ TODO Place these in an assembler vocabulary, and drop the 'a' prefix
 : iOR      0000 or t, ;
 : iAND     1000 or t, ;
 : iXOR     2000 or t, ;
@@ -116,9 +116,9 @@ size =cell - tep !
 : flags? 1 iGET ;
 : flags! 1 iSET ;
 : clr 0 iLITERAL ;
-: halt! flgHlt iLITERAL flags! ;
+: halt!  flgHlt iLITERAL flags! ;
 : reset! flgR   iLITERAL flags! ;
-: branch 2/ iJUMP ;
+: branch  2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
 
@@ -165,7 +165,7 @@ label: TERMBUF
 400 tvar rx-re-mask
 FF  tvar low-byte-mask
 
-
+\ TODO: add to assembler vocabulary
 : fdefault flgInd iLITERAL flags! ;
 : vcell 1 ( cell '1' should contain '1' ) ;
 : -vcell set 2/ ;
@@ -179,9 +179,9 @@ FF  tvar low-byte-mask
 label: start
 	start 2/ C000 or entry t!
 	fdefault
-
 	<cold> iLOAD-C
 	ip iSTORE-C
+	\ -- fall-through --
 label: next
 	fdefault
 	ip iLOAD-C
@@ -189,7 +189,7 @@ label: next
 	ip iLOAD-C
 	1 iADD
 	ip iSTORE-C
-	w iLOAD-C pc!
+	w iLOAD-C pc! \ jump to next token
 
 label: {nest} ( accumulator must contain '0 iGET' )
 	w iSTORE-C ( store '0 iGET' into working pointer )
@@ -212,7 +212,7 @@ label: {unnest}
 : nest 0 iGET {nest} branch ;
 : unnest {unnest} branch ;
 
-: t:
+: t: ( "name" -- : forth only routine )
   >in @ thead >in !
     get-current >r target.1 set-current create
     r> set-current CAFEBABE talign there , 
@@ -220,14 +220,17 @@ label: {unnest}
     does> @ branch ( really a call ) ;
 : t; CAFEBABE <> if abort" unstructured" then unnest ; 
 
-: a: 
+: a: ( "name" -- : assembly only routine ) 
   >in @ thead >in !
   get-current >r target.1 set-current create
-   r> set-current ( CAFED00D ) talign there , does> @ branch  ;
-: a; ( CAFED00D <> if abort" unstructured" then ) next branch ;
-: ha:
+   r> set-current ( CAFED00D ) talign there , assembler.1 +order 
+   does> @ branch  ;
+: a; ( CAFED00D <> if abort" unstructured" then ) next branch assembler.1 -order ;
+: ha: ( "name" -- : assembly only routine, no header )
      ( CAFED00D <> if abort" unstructured" then )
-     create talign there , does> @ branch ;
+     create talign there ,  
+     assembler.1 +order
+     does> @ branch ;
 
 \ TODO: hide/unhide vocabs depending in t:/a:/ha:
 target.1 +order
@@ -245,24 +248,29 @@ ha: opPush
 	a;
 
 ha: opJump
-	ip iLOAD-C 1 iADD ip iSTORE-C
 	ip iLOAD
-	pc!
+	ip iSTORE-C
+	a;
 
 ha: opJumpZ
 	tos iLOAD-C
 	w iSTORE-C
-	--sp
 	sp iLOAD
 	tos iSTORE-C
+	--sp
 	w iLOAD-C
-	' opJump body> @ 2/ iJUMPZ
-	ip iLOAD-C 1 iADD ip iSTORE-C
+	zero?
+	aif
+		ip iLOAD
+		ip iSTORE-C
+	aelse
+		ip iLOAD-C 1 iADD ip iSTORE-C
+	athen
 	a;
 
-: begin there ;
-: until opJumpZ 2/ t, ;
-: again opJump 2/ t, ;
+: begin talign there ;
+: until talign opJumpZ 2/ t, ;
+: again talign opJump  2/ t, ;
 : if opJumpZ there 0 t, ;
 \ : skip there branch ;
 \ : then begin 2/ over t@ or swap t! ;
@@ -423,38 +431,41 @@ a: tx! ( ch -- )
 	--sp
 	a;
 
-\ TODO: rx? for a non-blocking rx
-a: rx ( -- ch )
-	\ wait until not empty
-	abegin
-		801 iGET
-		rx-empty-mask 2/ iAND
-		zero?
-	auntil
+a: rx? ( -- ch -1 | 0 )
 	++sp
 	tos iLOAD-C
 	sp iSTORE
 
-	rx-re-mask iLOAD-C
-	801 iSET
 	801 iGET
-	low-byte-mask 2/ iAND
-	tos iSTORE-C
-	
+	rx-empty-mask 2/ iAND
+	aif
+		0 iLITERAL
+		tos iSTORE-C
+	aelse
+		++sp
+		rx-re-mask iLOAD-C
+		801 iSET
+		801 iGET
+		low-byte-mask 2/ iAND
+		sp iSTORE
+		set 2/ iLOAD-C
+		tos iSTORE-C
+	athen
 	a;
-
-\ t: rx? ( -- ch -1 | 0 )
-\	t;
 
 \ Also need: swap drop dup um+ r@ r sp lshift rshift opBranch opBranch?
 \ 'lshift' and 'rshift' will need to convert the shift amount, also need the
 \ following words to implement a complete(ish) Forth interpreter; parse, word,
 \ cr, >number, <#, #, #S, #>, ., .s, ",", if, else, then, begin, until, [,
 \ ], \, (, .", :, ;, here, <, >, u>, u<, =, <>, (and perhaps a few more...).
+\ 
+\ lshift/rshift probably need a lookup table to convert 0-16 to a bit-pattern
 
-: lit opPush t, ;
-: char  char opPush t, ;
+: lit         opPush t, ;
+: char   char opPush t, ;
+: [char] char opPush t, ;
 
+\ TODO: need a more efficient way of creating variables...
 a: here  
 	++sp
 	tos iLOAD-C
@@ -463,15 +474,18 @@ a: here
 	tos iSTORE-C 
 	a;
 
+t: negate 1- invert t;
+t: - negate + t;
+t: key? rx? t;
+t: key begin rx? until t;
 a: [ 0 iLITERAL state iSTORE-C a; ( immediate )
 a: ] 1 iLITERAL state iSTORE-C a; 
 a: 0= tos iLOAD-C zero? aif set iLOAD-C aelse 0 iLOAD-C athen tos iSTORE-C a;
 t: = xor 0= t; 
 t: <> = 0= t;
-t: cr D lit tx! A lit tx! t;
-t: ok char O tx! char K tx! cr t;
 a: um+ a;
 t: interpret t;
+t: quit t;
 t: type t;
 \ TODO: Hex only numeric input/output (only requires power of 2 division)
 \ TODO: Implement division/multiplication
@@ -482,9 +496,12 @@ t: query t;
 t: number t;
 t: digit t;
 t: emit tx! t;
+t: cr D lit emit A lit emit t;
+t: ok char O emit char K emit cr t;
 t: : t;
 t: ; t;
 t: immediate t;
+\ t: nop t;
 \ t: if t;
 \ t: else t;
 \ t: then t;
@@ -493,14 +510,12 @@ t: immediate t;
 \ t: until t;
 \ t: exit t;
 
-\ TODO: Should remove the need to call 'branch' after use of word, can
-\ use "t'" to get "body>" if needs be.
-
-
 t: cold
 	there 2/ <cold> t!
 
-	\ 0 lit
+	\ begin key emit again
+
+	3 lit
 	begin
 		char H emit
 		char E emit
@@ -508,10 +523,8 @@ t: cold
 		char L emit
 		char O emit
 		cr
-		\ dup 1- 0=
-		1 lit
+		1- dup 0=
 	until
-	drop
 	
 	5 lit
 	6 lit

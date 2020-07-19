@@ -30,8 +30,8 @@ wordlist constant assembler.1
 : -order ( wid -- ) get-order (order) nip set-order ;
 : +order ( wid -- ) dup >r -order get-order r> swap 1+ set-order ;
 
-get-current meta.1 set-current drop
-meta.1 +order
+\ get-current meta.1 set-current drop
+meta.1 +order definitions
 
 000a constant =lf
    2 constant =cell
@@ -55,7 +55,7 @@ size =cell - tep !
 : talign there 1 and tdp +! ;
 : tc, there tc! 1 tdp +! ;
 : t, there t! 2 tdp +! ;
-: $literal" [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
+: $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
 : tallot tdp +! ;
 : org tdp ! ;
 : thead 
@@ -84,8 +84,16 @@ size =cell - tep !
 
 : tvar   create there , t, does> @ ;
 : label: create there ,    does> @ ;
+: asm[ assembler.1 +order ;
+: ]asm assembler.1 -order ;
+: meta[ meta.1 +order definitions ;
+: ]meta meta.1 -order ;
+
 
 \ TODO Place these in an assembler vocabulary, and drop the 'a' prefix
+
+\ assembler.1 +order definitions
+
 : iOR      0000 or t, ;
 : iAND     1000 or t, ;
 : iXOR     2000 or t, ;
@@ -122,16 +130,21 @@ size =cell - tep !
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
 
-\ TODO Place these in an assembler vocabulary, and drop the 'a' prefix
-: abegin there ;
-: auntil ?branch ;
-: aagain branch ;
-: aif there 0 ?branch ;
-: askip there 0 branch ;
-: athen abegin 2/ over t@ or swap t! ;
-: aelse askip swap athen ;
-: awhile aif swap ;
-: arepeat branch athen ;
+assembler.1 +order definitions
+: begin there ;
+: until ?branch ;
+: again branch ;
+: if there 0 ?branch ;
+: skip there 0 branch ;
+: then begin 2/ over t@ or swap t! ;
+: else skip swap then ;
+: while if swap ;
+: repeat branch then ;
+assembler.1 -order
+meta.1 +order definitions
+
+\ assembler.1 -order
+\ target.1 +order definitions
 
 0 t,  \ must be 0 ('0 iOR'  works in either indirect or direct mode)
 1 t,  \ must be 1 ('1 iADD' works in either indirect or direct mode)
@@ -140,6 +153,7 @@ label: entry
 0 t,  \ our actual entry point, will be set later
 
 FFFF tvar set \ all bits set, -1
+  FF tvar low \ lowest bytes set
 0 tvar <cold> \ entry point of virtual machine program, set later on
 0 tvar ip     \ instruction pointer
 0 tvar w      \ working pointer
@@ -183,6 +197,7 @@ label: start
 	ip iSTORE-C
 	\ -- fall-through --
 label: next
+	\ TODO: VM sanity checks on variables
 	fdefault
 	ip iLOAD-C
 	w iSTORE-C
@@ -212,20 +227,26 @@ label: {unnest}
 : nest 0 iGET {nest} branch ;
 : unnest {unnest} branch ;
 
+: ht: ( "name" -- : forth only routine )
+    get-current >r target.1 set-current create
+    r> set-current CAFEBABE talign
+    nest
+    does> @ branch ( really a call ) ;
 : t: ( "name" -- : forth only routine )
   >in @ thead >in !
     get-current >r target.1 set-current create
     r> set-current CAFEBABE talign there , 
     nest
     does> @ branch ( really a call ) ;
+
 : t; CAFEBABE <> if abort" unstructured" then unnest ; 
 
 : a: ( "name" -- : assembly only routine ) 
   >in @ thead >in !
   get-current >r target.1 set-current create
-   r> set-current ( CAFED00D ) talign there , assembler.1 +order 
+   r> set-current ( CAFED00D ) talign there , asm[
    does> @ branch  ;
-: a; ( CAFED00D <> if abort" unstructured" then ) next branch assembler.1 -order ;
+: a; ( CAFED00D <> if abort" unstructured" then ) next branch ]asm ;
 : ha: ( "name" -- : assembly only routine, no header )
      ( CAFED00D <> if abort" unstructured" then )
      create talign there ,  
@@ -233,7 +254,7 @@ label: {unnest}
      does> @ branch ;
 
 \ TODO: hide/unhide vocabs depending in t:/a:/ha:
-target.1 +order
+target.1 +order definitions
 
 ha: opPush
 	++sp
@@ -260,29 +281,45 @@ ha: opJumpZ
 	--sp
 	w iLOAD-C
 	zero?
-	aif
+	if
 		ip iLOAD
 		ip iSTORE-C
-	aelse
+	else
 		ip iLOAD-C 1 iADD ip iSTORE-C
-	athen
+	then
 	a;
+
+meta.1 +order definitions
 
 : begin talign there ;
 : until talign opJumpZ 2/ t, ;
 : again talign opJump  2/ t, ;
 : if opJumpZ there 0 t, ;
-\ : skip there branch ;
-\ : then begin 2/ over t@ or swap t! ;
-\ : else skip swap then ;
-\ : while if swap ;
-\ : repeat branch then ;
+: skip opJump there 0 t, ;
+: then there 2/ swap t! ;
+: else skip swap then ;
+: while if ;
+: repeat swap again then ;
 
-a: halt
-	halt!
+target.1 +order definitions meta.1 +order
 
-a: bye
-	reset!
+a: halt halt! a;
+a: bye reset! a;
+a: exit unnest a;
+
+ha: lls ( u shift -- u : shift left by number of bits set )
+	sp iLOAD
+	tos 2/ iLSHIFT
+	tos iSTORE-C
+	--sp
+	a;
+
+ha: lrs ( u shift -- u : shift right by number of bits set )
+	sp iLOAD
+	tos 2/ iRSHIFT
+	tos iSTORE-C
+	--sp
+	a;
 
 a: and
 	sp iLOAD
@@ -340,17 +377,24 @@ a: !
 	--sp
 	a;
 
-( a: c@
+a: c@
 	tos iLOAD-C
-	1 iAND zero? aif
-
-	aelse
-
-	athen
-	
+	1 iRSHIFT
+	w iSTORE-C
+	w iLOAD
+	w iSTORE-C
+	tos iLOAD-C
+	1 iAND zero? if
+		w iLOAD-C
+		low 2/ iRSHIFT
+	else
+		w iLOAD-C
+		low 2/ iAND
+	then
+	tos iSTORE-C
 	a;
 
-a: c!
+( a: c!
 	a; )
 
 a: dup
@@ -368,6 +412,16 @@ a: drop
 a: swap
 	sp iLOAD
 	w iSTORE-C
+	tos iLOAD-C
+	sp iSTORE
+	w iLOAD-C
+	tos iSTORE-C
+	a;
+
+a: over
+	sp iLOAD
+	w iSTORE-C
+	++sp
 	tos iLOAD-C
 	sp iSTORE
 	w iLOAD-C
@@ -417,11 +471,14 @@ a: r@
 
 a: tx! ( ch -- )
 	\ wait until not full
-	abegin
+	begin
 		801 iGET
 		tx-full-mask 2/ iAND
 		zero?
-	auntil
+	until
+	tos iLOAD-C
+	low-byte-mask 2/ iAND
+	tos iSTORE-C
 	tx-write-mask iLOAD-C
 	tos 2/ iOR
 	\ write byte
@@ -438,10 +495,10 @@ a: rx? ( -- ch -1 | 0 )
 
 	801 iGET
 	rx-empty-mask 2/ iAND
-	aif
+	if
 		0 iLITERAL
 		tos iSTORE-C
-	aelse
+	else
 		++sp
 		rx-re-mask iLOAD-C
 		801 iSET
@@ -450,7 +507,18 @@ a: rx? ( -- ch -1 | 0 )
 		sp iSTORE
 		set 2/ iLOAD-C
 		tos iSTORE-C
-	athen
+	then
+	a;
+
+ha: flags
+	tos iLOAD-C ( load into accumulator so it sets flags )
+	flags?      ( check those flags )
+	w iSTORE-C
+	++sp
+	tos iLOAD-C
+	sp iSTORE
+	w iLOAD-C
+	tos iSTORE-C
 	a;
 
 \ Also need: swap drop dup um+ r@ r sp lshift rshift opBranch opBranch?
@@ -461,71 +529,112 @@ a: rx? ( -- ch -1 | 0 )
 \ 
 \ lshift/rshift probably need a lookup table to convert 0-16 to a bit-pattern
 
+meta.1 +order definitions
+
 : lit         opPush t, ;
-: char   char opPush t, ;
 : [char] char opPush t, ;
+: char   char opPush t, ;
+
+target.1 +order definitions meta.1 +order
 
 \ TODO: need a more efficient way of creating variables...
 a: here  
 	++sp
 	tos iLOAD-C
-	sp iSTORE
-	h iLOAD
+	sp  iSTORE
+	h   iLOAD
 	tos iSTORE-C 
 	a;
+a: [ 0 iLITERAL state iSTORE-C a; ( immediate )
+a: ] 1 iLITERAL state iSTORE-C a; 
+a: 0= tos iLOAD-C zero? if set iLOAD-C else 0 iLOAD-C then tos iSTORE-C a;
 
+\ ---- --- ---- ---- ---- no more direct assembly ---- ---- ---- ---- ----
+
+assembler.1 -order
+
+t: aligned dup 1 lit and + t;
+t: nip swap drop t;
 t: negate 1- invert t;
 t: - negate + t;
 t: key? rx? t;
 t: key begin rx? until t;
-a: [ 0 iLITERAL state iSTORE-C a; ( immediate )
-a: ] 1 iLITERAL state iSTORE-C a; 
-a: 0= tos iLOAD-C zero? aif set iLOAD-C aelse 0 iLOAD-C athen tos iSTORE-C a;
+t: u< - flags nip 6 lit and 0= t;
+t: u> swap u< t;
+\ t: u<= u> 0= t;
+\ t: u>= u< 0= t;
 t: = xor 0= t; 
 t: <> = 0= t;
-a: um+ a;
 t: interpret t;
 t: quit t;
-t: type t;
-\ TODO: Hex only numeric input/output (only requires power of 2 division)
+t: count dup 1+ swap c@ t; ( b -- b u )
+t: 2drop drop drop t;
+t: emit tx! t;
+t: type ( b u -- )
+	 begin dup while
+		swap count emit swap 1-
+	 repeat
+	 2drop t;
 \ TODO: Implement division/multiplication
-t: . t;
+t: digit F lit and 30 lit + dup 39 lit u< if 7 lit + then t;
+t: bl 20 lit t;
+t: . 
+	dup FFF lit lrs digit emit 
+	dup  FF lit lrs digit emit 
+	dup   F lit lrs digit emit
+	                digit emit 
+	bl emit
+   t;
 t: find t;
 t: parse t;
 t: query t;
 t: number t;
-t: digit t;
-t: emit tx! t;
 t: cr D lit emit A lit emit t;
 t: ok char O emit char K emit cr t;
-t: : t;
-t: ; t;
-t: immediate t;
+
+\ ht: do$ r> r> dup count + aligned >r swap >r t; ( -- a )
+\ ht: string-literal do$ t; ( -- a : do string NB. nop to fool optimizer )
+\ ht: print count type t;
+\ ht: .string do$ print t;      ( -- : print string  )
+\ : ." .string $literal ;
+
 \ t: nop t;
+\ t: exit t;
 \ t: if t;
 \ t: else t;
 \ t: then t;
 \ t: begin t;
 \ t: again t;
 \ t: until t;
-\ t: exit t;
+\ t: ." t;
+\ t: : t;
+\ t: ; t;
+\ t: immediate t;
+
+\ t: rot >r swap r> swap t;
+\ t: -rot rot rot t;
+\ t: execute >r t;
+\ a: um+ a;
+
+\ Test string 'HELLO WORLD'
+
+0B48 tvar ahoy
+454C t,
+4C4F t,
+2057 t,
+4F52 t,
+4C44 t,
 
 t: cold
 	there 2/ <cold> t!
 
 	\ begin key emit again
+	ABCD lit . cr
 
-	3 lit
-	begin
-		char H emit
-		char E emit
-		char L emit
-		char L emit
-		char O emit
-		cr
-		1- dup 0=
-	until
-	
+	\ ." WOOP" cr
+
+	ahoy lit count type cr
+
 	5 lit
 	6 lit
 	+

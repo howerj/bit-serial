@@ -340,6 +340,10 @@ different version made with 7400 series logic gates
 * [x] Create a tiny test program
 * [x] Verify program works in hardware
 * [ ] Implement a tiny Forth on the CPU
+  * [x] Implement stack based virtual machine
+  * [x] Implement basic words
+  * [ ] Implement REPL
+  * [ ] Create a unit test framework to test each word on target
 * [ ] Use in other VHDL projects
   * [ ] As a low speed UART (Bit-Banged)
   * [ ] As a VT100 interface for a VGA Text Terminal in a CGA graphics card

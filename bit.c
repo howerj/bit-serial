@@ -11,15 +11,20 @@
 #include <stdarg.h>
 #include <limits.h>
 
-#define MSIZE    (4096u)
-#define NELEM(X) (sizeof(X)/sizeof(X[0]))
+#define MSIZE     (4096u)
+#define NELEM(X)  (sizeof(X)/sizeof(X[0]))
+#define UNUSED(X) ((void)(X))
+#define BACKSPACE (8)
+#define ESCAPE    (27)
+#define DELETE    (127)
 
 typedef uint16_t mw_t; /* machine word */
 
 typedef struct { 
 	mw_t pc, acc, flg, m[MSIZE]; 
 	/* io */ 
-	FILE *in, *out; mw_t ch, leds, switches;
+	FILE *in, *out; 
+	mw_t ch, leds, switches;
 	/* options */
 	unsigned long cycles;
 	int forever;
@@ -27,6 +32,76 @@ typedef struct {
 } bcpu_t;
 
 enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
+
+#ifdef _WIN32 /* Making standard input streams on Windows binary */
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+extern int _fileno(FILE *stream);
+static void binary(FILE *f) { _setmode(_fileno(f), _O_BINARY); }
+#else
+static inline void binary(FILE *f) { UNUSED(f); }
+#endif
+
+#ifdef __unix__
+#include <unistd.h>
+#include <termios.h>
+static int getch(void) {
+	struct termios oldattr, newattr;
+	if (tcgetattr(STDIN_FILENO, &oldattr) < 0)
+		return -2;
+	newattr = oldattr;
+	newattr.c_iflag &= ~(ICRNL);
+	newattr.c_lflag &= ~(ICANON | ECHO);
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &newattr) < 0)
+		return -2;
+	const int ch = getchar();
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &oldattr) < 0)
+		return -2;
+	return ch;
+}
+
+static int putch(int c) {
+	const int r = putchar(c);
+	if (fflush(stdout) < 0)
+		return -1;
+	return r;
+}
+#else
+#ifdef _WIN32
+extern int getch(void);
+extern int putch(int c);
+#else
+static int getch(void) { return getchar(); }
+static int putch(const int c) { return putchar(c); }
+#endif
+#endif /** __unix__ **/
+
+static int wrap_getch(bcpu_t *b) {
+	assert(b);
+	if (b->in != stdin)
+		return fgetc(b->in);
+	const int ch = getch();
+	if (ch == ESCAPE) {
+		(void)fprintf(stderr, "escape hit -- exiting\n");
+		exit(EXIT_SUCCESS);
+	}
+	return ch == DELETE ? BACKSPACE : ch;
+}
+
+static int wrap_putch(bcpu_t *b, const int ch) {
+	assert(b);
+	if (b->out != stdout) {
+		const int r = fputc(ch, b->out);
+		if (fflush(b->out) < 0)
+			return -1;
+		return r;
+	}
+	const int r = putch(ch);
+	if (fflush(stdout) < 0)
+		return -1;
+	return r;
+}
 
 static void die(const char *fmt, ...) {
 	assert(fmt);
@@ -150,11 +225,11 @@ static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	case 0: b->leds = val; break;
 	case 1: 
 		if (val & (1u << 13)) {
-			fputc(val & 0xFFu, b->out);
+			wrap_putch(b, val & 0xFFu);
 			fflush(b->out);
 		}
 		if (val & (1u << 10))
-			b->ch = fgetc(b->in);
+			b->ch = wrap_getch(b);
 		break;
 	case 2: /* TX control */ break;
 	case 3: /* RX control */ break;
@@ -300,6 +375,9 @@ done:
 int main(int argc, char **argv) {
 	int cycles = 0x1000, i = 1, forever = 1;
 	static bcpu_t b = { .in = NULL };
+	binary(stdin);
+	binary(stdout);
+	binary(stderr);
 	b.in    = stdin;
 	b.out   = stdout;
 	FILE *file = stdin, *hex = NULL, *tfile = stderr;

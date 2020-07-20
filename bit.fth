@@ -33,11 +33,14 @@ wordlist constant assembler.1
 \ get-current meta.1 set-current drop
 meta.1 +order definitions
 
-000a constant =lf
    2 constant =cell
 2000 constant size
   40 constant =stksz
   80 constant =buf
+0008 constant =bksp
+000a constant =lf
+000d constant =cr
+
 
 create tflash size cells here over erase allot
 
@@ -55,7 +58,7 @@ size =cell - tep !
 : talign there 1 and tdp +! ;
 : tc, there tc! 1 tdp +! ;
 : t, there t! 2 tdp +! ;
-: $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
+: $literal" [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
 : tallot tdp +! ;
 : org tdp ! ;
 : thead 
@@ -80,7 +83,9 @@ size =cell - tep !
       dup tflash + count 1f and type space =cell - t@
    ?dup 0= until ;
 : .stat ." words> " twords cr ." used> " there dup ." 0x" .h ." / " .d cr ;
-: .end only forth definitions decimal ;
+: .end 
+
+   only forth definitions decimal ;
 
 : tvar   create there , t, does> @ ;
 : label: create there ,    does> @ ;
@@ -168,8 +173,8 @@ label: RSTACK \ Return stack start, grows upwards
 =stksz tallot
 label: VSTACK \ Variable stack *end*, grows downwards
 =stksz tallot
-VSTACK =stksz + 2/ tvar sp  \ variable stack pointer
-RSTACK          2/ tvar rp  \ return stack pointer
+VSTACK =stksz + 2/ dup tvar sp0 tvar sp  \ variable stack pointer
+RSTACK          2/ dup tvar rp0 tvar rp  \ return stack pointer
 0 tvar #tib    \ terminal input buffer
 label: TERMBUF
 =buf   tallot
@@ -189,10 +194,11 @@ FF  tvar low-byte-mask
 : --rp rp iLOAD-C -vcell iADD rp iSTORE-C fdefault ;
 : ++rp rp iLOAD-C  vcell iADD rp iSTORE-C ;
 
-	\ TODO: Set return and variable stacks, and other variables
 label: start
 	start 2/ C000 or entry t!
 	fdefault
+	sp0 iLOAD-C sp iSTORE-C
+	rp0 iLOAD-C rp iSTORE-C
 	<cold> iLOAD-C
 	ip iSTORE-C
 	\ -- fall-through --
@@ -364,13 +370,15 @@ a: @
 	1 iRSHIFT
 	tos iSTORE-C
 	tos iLOAD
+	tos iSTORE-C
 	a;
 
 a: !
-	sp iLOAD
+	tos iLOAD-C
 	1 iRSHIFT
-	tos iSTORE-C
-	tos iSTORE
+	w iSTORE-C
+	sp iLOAD
+	w iSTORE
 	--sp
 	sp iLOAD
 	tos iSTORE-C
@@ -386,16 +394,13 @@ a: c@
 	tos iLOAD-C
 	1 iAND zero? if
 		w iLOAD-C
-		low 2/ iRSHIFT
+		low 2/ iAND
 	else
 		w iLOAD-C
-		low 2/ iAND
+		low 2/ iRSHIFT
 	then
 	tos iSTORE-C
 	a;
-
-( a: c!
-	a; )
 
 a: dup
 	++sp
@@ -450,9 +455,9 @@ a: >r
 	a;
 	
 a: r>
-	--rp
 	rp iLOAD
 	w iSTORE-C
+	--rp
 	++sp
 	tos iLOAD-C
 	sp iSTORE
@@ -464,10 +469,12 @@ a: r@
 	++sp
 	tos iLOAD-C
 	sp iSTORE
-	rp iLOAD-C
+	rp iLOAD
 	tos iSTORE-C
 	a;
 
+\ TODO: Implement an 'io!' and 'io@' word set, then use this to implement
+\ 'tx!' and 'rx?', this might save space, and it would be more flexible.
 
 a: tx! ( ch -- )
 	\ wait until not full
@@ -538,13 +545,6 @@ meta.1 +order definitions
 target.1 +order definitions meta.1 +order
 
 \ TODO: need a more efficient way of creating variables...
-a: here  
-	++sp
-	tos iLOAD-C
-	sp  iSTORE
-	h   iLOAD
-	tos iSTORE-C 
-	a;
 a: [ 0 iLITERAL state iSTORE-C a; ( immediate )
 a: ] 1 iLITERAL state iSTORE-C a; 
 a: 0= tos iLOAD-C zero? if set iLOAD-C else 0 iLOAD-C then tos iSTORE-C a;
@@ -553,22 +553,38 @@ a: 0= tos iLOAD-C zero? if set iLOAD-C else 0 iLOAD-C then tos iSTORE-C a;
 
 assembler.1 -order
 
-t: aligned dup 1 lit and + t;
+t: here h lit @ t;
+\ t: sp0 sp0 lit @ t;
+\ t: rp0 rp0 lit @ t;
 t: nip swap drop t;
-t: negate 1- invert t;
-t: - negate + t;
-t: key? rx? t;
-t: key begin rx? until t;
-t: u< - flags nip 6 lit and 0= t;
-t: u> swap u< t;
-\ t: u<= u> 0= t;
-\ t: u>= u< 0= t;
+t: tuck swap over t;
 t: = xor 0= t; 
 t: <> = 0= t;
+t: 0< flags 4 lit and 0= 0= t;
+t: negate 1- invert t;
+t: - negate + t;
+t: < - 0< t;
+t: > swap < t;
+\ t: <= 1 lit + < t;
+\ t: >= swap <= t;
+t: u> - flags nip 6 lit and 0= t;
+t: u< swap u> t;
+t: c! ( c b -- )
+	dup 1 lit and if
+		dup >r @ 00FF lit and swap FF lit lls or r> !
+	else
+		dup >r @ FF00 lit and swap FF lit and or r> !
+	then t;
+t: aligned dup 1 lit and + t;
+t: key? rx? t;
+t: key begin rx? until t;
+\ t: u<= u> 0= t;
+\ t: u>= u< 0= t;
 t: interpret t;
 t: quit t;
 t: count dup 1+ swap c@ t; ( b -- b u )
 t: 2drop drop drop t;
+t: 2dup over over t;
 t: emit tx! t;
 t: type ( b u -- )
 	 begin dup while
@@ -576,27 +592,59 @@ t: type ( b u -- )
 	 repeat
 	 2drop t;
 \ TODO: Implement division/multiplication
-t: digit F lit and 30 lit + dup 39 lit u< if 7 lit + then t;
+t: digit F lit and 30 lit + dup 39 lit u> if 7 lit + then t;
 t: bl 20 lit t;
-t: . 
-	dup FFF lit lrs digit emit 
+t: u.
+ 	dup FFF lit lrs digit emit 
 	dup  FF lit lrs digit emit 
 	dup   F lit lrs digit emit
 	                digit emit 
-	bl emit
-   t;
+	bl emit t;
+t: .  dup 0< if 2d lit emit negate then u. t;
+\ t: cmove ( b1 b2 u -- ) for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop t;
+\ t: pack$ ( b u a -- a ) dup >r 2dup ! 1+ swap cmove r> t;
 t: find t;
 t: parse t;
 t: query t;
 t: number t;
-t: cr D lit emit A lit emit t;
+t: space bl emit t;
+t: cr =cr lit emit =lf lit emit t;
 t: ok char O emit char K emit cr t;
+
+t: ^h ( bot eot cur -- bot eot cur )
+	>r over r@ < dup if
+		=bksp lit dup emit space
+		emit 
+	then 
+	r> + t;
+
+t: tap ( bot eot cur c -- bot eot cur )
+	dup emit over c! 1+ t;
+
+t: ktap ( bot eot cur c -- bot eot cur )
+	dup =cr lit xor if
+		=bksp lit xor if
+			bl tap exit
+		then 
+		^h exit
+	then drop nip dup t;
+
+t: accept ( b u -- b u )
+	over + over
+	begin
+		2dup xor
+	while
+		key dup bl - 7F lit u< if tap else ktap then
+	repeat drop over - t;
+
+\ t: query ( -- ) tib @ 50 lit accept #tib ! drop 0 lit >in ! t;
+
 
 \ ht: do$ r> r> dup count + aligned >r swap >r t; ( -- a )
 \ ht: string-literal do$ t; ( -- a : do string NB. nop to fool optimizer )
 \ ht: print count type t;
 \ ht: .string do$ print t;      ( -- : print string  )
-\ : ." .string $literal ;
+\ : ." .string $literal" ;
 
 \ t: nop t;
 \ t: exit t;
@@ -618,20 +666,17 @@ t: ok char O emit char K emit cr t;
 
 \ Test string 'HELLO WORLD'
 
-0B48 tvar ahoy
-454C t,
-4C4F t,
-2057 t,
-4F52 t,
-4C44 t,
+label: ahoy $literal" HELLO WORLD"
+
 
 t: cold
 	there 2/ <cold> t!
 
-	\ begin key emit again
-	ABCD lit . cr
+	here u. cr
 
 	\ ." WOOP" cr
+	\ begin here 80 lit accept type cr again
+	\ begin key emit cr again
 
 	ahoy lit count type cr
 
@@ -642,6 +687,8 @@ t: cold
 	halt 
 	t;
 
+
+there h t!
 save-hex bit.hex
 save-target bit.bin
 .stat

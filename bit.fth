@@ -38,8 +38,9 @@ meta.1 +order definitions
   40 constant =stksz
   80 constant =buf
 0008 constant =bksp
-000a constant =lf
-000d constant =cr
+000A constant =lf
+000D constant =cr
+007F constant =del
 
 
 create tflash size cells here over erase allot
@@ -234,16 +235,17 @@ label: {unnest}
 : unnest {unnest} branch ;
 
 : ht: ( "name" -- : forth only routine )
-    get-current >r target.1 set-current create
-    r> set-current CAFEBABE talign
-    nest
-    does> @ branch ( really a call ) ;
+	get-current >r target.1 set-current create
+	r> set-current CAFEBABE talign there ,
+	nest
+	does> @ branch ( really a call ) ;
+
 : t: ( "name" -- : forth only routine )
-  >in @ thead >in !
-    get-current >r target.1 set-current create
-    r> set-current CAFEBABE talign there , 
-    nest
-    does> @ branch ( really a call ) ;
+	>in @ thead >in !
+	get-current >r target.1 set-current create
+	r> set-current CAFEBABE talign there , 
+	nest
+	does> @ branch ( really a call ) ;
 
 : t; CAFEBABE <> if abort" unstructured" then unnest ; 
 
@@ -361,6 +363,21 @@ a: +
 	fdefault
 	--sp
 	a;
+
+
+a: um+ 
+	sp iLOAD
+	tos 2/ iADD
+	sp iSTORE
+	flags?
+	flgCy iAND
+	if 
+		1 iLITERAL
+	else
+		0 iLITERAL
+	then
+	tos iSTORE-C
+	fdefault a;
 
 \ NOTE: @/! cannot perform I/O operations, we will need new words for that, as
 \ they cannot write to the top bit.
@@ -517,6 +534,8 @@ a: rx? ( -- ch -1 | 0 )
 	then
 	a;
 
+
+
 ha: flags
 	tos iLOAD-C ( load into accumulator so it sets flags )
 	flags?      ( check those flags )
@@ -558,6 +577,10 @@ t: here h lit @ t;
 \ t: rp0 rp0 lit @ t;
 t: nip swap drop t;
 t: tuck swap over t;
+t: ?dup  dup if dup then exit t; ( w -- w w | 0 )
+t: rot  >r swap r> swap t; ( w1 w2 w3 -- w2 w3 w1 )
+t: 2drop  drop drop t; ( w w -- )
+t: 2dup  over over t; ( w1 w2 -- w1 w2 w1 w2 )
 t: = xor 0= t; 
 t: <> = 0= t;
 t: 0< flags 4 lit and 0= 0= t;
@@ -565,10 +588,16 @@ t: negate 1- invert t;
 t: - negate + t;
 t: < - 0< t;
 t: > swap < t;
-\ t: <= 1 lit + < t;
+\ t: <= 1+ < t;
 \ t: >= swap <= t;
-t: u> - flags nip 6 lit and 0= t;
+\ ht: high 8000 lit and t;
+\ ht: ovf 2dup - high >r and high r> xor 0= 0= t;
+\ <https://community.arm.com/developer/ip-products/processors/b/processors-ip-blog/posts/condition-codes-1-condition-flags-and-codes>
+t: u> - flags nip 6 lit and 0= t; \ TODO: fix/buggy
 t: u< swap u> t;
+\ t: u<= u> 0= t;
+\ t: u>= u< 0= t;
+
 t: c! ( c b -- )
 	dup 1 lit and if
 		dup >r @ 00FF lit and swap FF lit lls or r> !
@@ -576,15 +605,17 @@ t: c! ( c b -- )
 		dup >r @ FF00 lit and swap FF lit and or r> !
 	then t;
 t: aligned dup 1 lit and + t;
+
+t: dnegate invert >r invert 1 lit um+ r> + t; ( d -- -d )
+t: abs  dup 0< if negate then exit t; ( n -- n )
+t: max  2dup > if drop exit then nip t; ( n n -- n )
+t: min  2dup < if drop exit then nip t; ( n n -- n )
+\ t: within over - >r - r> u< t; ( u ul uh -- t )
+
+
 t: key? rx? t;
 t: key begin rx? until t;
-\ t: u<= u> 0= t;
-\ t: u>= u< 0= t;
-t: interpret t;
-t: quit t;
 t: count dup 1+ swap c@ t; ( b -- b u )
-t: 2drop drop drop t;
-t: 2dup over over t;
 t: emit tx! t;
 t: type ( b u -- )
 	 begin dup while
@@ -592,7 +623,7 @@ t: type ( b u -- )
 	 repeat
 	 2drop t;
 \ TODO: Implement division/multiplication
-t: digit F lit and 30 lit + dup 39 lit u> if 7 lit + then t;
+ht: digit F lit and 30 lit + dup 39 lit u> if 7 lit + then t;
 t: bl 20 lit t;
 t: u.
  	dup FFF lit lrs digit emit 
@@ -609,26 +640,28 @@ t: query t;
 t: number t;
 t: space bl emit t;
 t: cr =cr lit emit =lf lit emit t;
-t: ok char O emit char K emit cr t;
+ht: ok char O emit char K emit cr t;
 
-t: ^h ( bot eot cur -- bot eot cur )
+ht: ^h ( bot eot cur -- bot eot cur )
+	halt
 	>r over r@ < dup if
-		=bksp lit dup emit space
-		emit 
+		=bksp lit dup emit emit
 	then 
 	r> + t;
 
-t: tap ( bot eot cur c -- bot eot cur )
+ht: tap ( bot eot cur c -- bot eot cur )
 	dup emit over c! 1+ t;
 
-t: ktap ( bot eot cur c -- bot eot cur )
+\ ht: delete? dup =bksp lit = swap =del lit = or 0= t;
+ht: ktap ( bot eot cur c -- bot eot cur )
 	dup =cr lit xor if
-		=bksp lit xor if
+		=bksp lit xor ( delete? ) if
 			bl tap exit
 		then 
 		^h exit
 	then drop nip dup t;
 
+ht: k? dup bl - 0< >r FF lit = r> or t;
 t: accept ( b u -- b u )
 	over + over
 	begin
@@ -658,16 +691,16 @@ t: accept ( b u -- b u )
 \ t: : t;
 \ t: ; t;
 \ t: immediate t;
+\ t: interpret t;
+\ t: quit t;
 
-\ t: rot >r swap r> swap t;
-\ t: -rot rot rot t;
 \ t: execute >r t;
-\ a: um+ a;
 
 \ Test string 'HELLO WORLD'
 
 label: ahoy $literal" HELLO WORLD"
 
+t: # dup u. t;
 
 t: cold
 	there 2/ <cold> t!
@@ -675,8 +708,10 @@ t: cold
 	here u. cr
 
 	\ ." WOOP" cr
-	\ begin here 80 lit accept type cr again
-	\ begin key emit cr again
+	\ begin here 10 lit accept space type cr again
+	\ begin key u. cr again
+	\ begin key k? u. cr again
+	\ begin key dup bl # - # 7F lit # u< u. cr again
 
 	ahoy lit count type cr
 

@@ -48,7 +48,7 @@ static inline void binary(FILE *f) { UNUSED(f); }
 #include <termios.h>
 static int getch(void) {
 	struct termios oldattr, newattr;
-	if (tcgetattr(STDIN_FILENO, &oldattr) < 0)
+	if (tcgetattr(STDIN_FILENO, &oldattr) < 0) /* Use 'fileno(b->in)'? */
 		return -2;
 	newattr = oldattr;
 	newattr.c_iflag &= ~(ICRNL);

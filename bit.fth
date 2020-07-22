@@ -195,6 +195,10 @@ FF  tvar low-byte-mask
 : --rp rp iLOAD-C -vcell iADD rp iSTORE-C fdefault ;
 : ++rp rp iLOAD-C  vcell iADD rp iSTORE-C ;
 
+\ The code for the virtual machine proper starts here, it consists of only
+\ a few labels, some initialization code in 'start', the code that performs
+\ the dispatch in 'vm', and calls/returns in '{nest}' and '{unnest}'.
+
 label: start
 	start 2/ C000 or entry t!
 	fdefault
@@ -203,7 +207,7 @@ label: start
 	<cold> iLOAD-C
 	ip iSTORE-C
 	\ -- fall-through --
-label: next
+label: vm
 	\ TODO: VM sanity checks on variables
 	fdefault
 	ip iLOAD-C
@@ -221,7 +225,7 @@ label: {nest} ( accumulator must contain '0 iGET' )
 	w iLOAD-C
 	2 iADD
 	ip iSTORE-C
-	next branch
+	vm branch
 
 label: {unnest}
 	rp iLOAD
@@ -229,7 +233,7 @@ label: {unnest}
 	--rp
 	w iLOAD-C
 	ip iSTORE-C
-	next branch
+	vm branch
 	
 : nest 0 iGET {nest} branch ;
 : unnest {unnest} branch ;
@@ -254,7 +258,7 @@ label: {unnest}
   get-current >r target.1 set-current create
    r> set-current ( CAFED00D ) talign there , asm[
    does> @ branch  ;
-: a; ( CAFED00D <> if abort" unstructured" then ) next branch ]asm ;
+: a; ( CAFED00D <> if abort" unstructured" then ) vm branch ]asm ;
 : ha: ( "name" -- : assembly only routine, no header )
      ( CAFED00D <> if abort" unstructured" then )
      create talign there ,  
@@ -297,6 +301,12 @@ ha: opJumpZ
 	then
 	a;
 
+ha: opNext
+	\ Get r@
+	\ if r> 1- >r exit then
+	\ jump to next cell location
+	a;
+
 meta.1 +order definitions
 
 : begin talign there ;
@@ -308,6 +318,11 @@ meta.1 +order definitions
 : else skip swap then ;
 : while if ;
 : repeat swap again then ;
+\ TODO test this
+: for >r begin ;
+: >mark again there ;
+: aft drop >mark begin swap ;
+: next opNext , ;
 
 target.1 +order definitions meta.1 +order
 
@@ -612,7 +627,6 @@ t: max  2dup > if drop exit then nip t; ( n n -- n )
 t: min  2dup < if drop exit then nip t; ( n n -- n )
 \ t: within over - >r - r> u< t; ( u ul uh -- t )
 
-
 t: key? rx? t;
 t: key begin rx? until t;
 t: count dup 1+ swap c@ t; ( b -- b u )
@@ -623,7 +637,7 @@ t: type ( b u -- )
 	 repeat
 	 2drop t;
 \ TODO: Implement division/multiplication
-ht: digit F lit and 30 lit + dup 39 lit u> if 7 lit + then t;
+ht: digit F lit and [char] 0 + dup 39 lit u> if 7 lit + then t;
 t: bl 20 lit t;
 t: u.
  	dup FFF lit lrs digit emit 
@@ -631,21 +645,18 @@ t: u.
 	dup   F lit lrs digit emit
 	                digit emit 
 	bl emit t;
-t: .  dup 0< if 2d lit emit negate then u. t;
+t: . dup 0< if [char] - emit negate then u. t; ( d -- )
 \ t: cmove ( b1 b2 u -- ) for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop t;
 \ t: pack$ ( b u a -- a ) dup >r 2dup ! 1+ swap cmove r> t;
-t: find t;
-t: parse t;
-t: query t;
-t: number t;
 t: space bl emit t;
 t: cr =cr lit emit =lf lit emit t;
 ht: ok char O emit char K emit cr t;
+t: execute >r t;
 
+\ TODO: Fix/Buggy
 ht: ^h ( bot eot cur -- bot eot cur )
-	halt
 	>r over r@ < dup if
-		=bksp lit dup emit emit
+		=bksp lit dup emit space emit
 	then 
 	r> + t;
 
@@ -661,26 +672,36 @@ ht: ktap ( bot eot cur c -- bot eot cur )
 		^h exit
 	then drop nip dup t;
 
-ht: k? dup bl - 0< >r FF lit = r> or t;
+ht: k? dup bl - 0< >r FF lit = r> or 0= t;
+
 t: accept ( b u -- b u )
 	over + over
 	begin
 		2dup xor
 	while
-		key dup bl - 7F lit u< if tap else ktap then
+		\ key dup bl - 7F lit u< if tap else ktap then
+		key k? if tap else ktap then
 	repeat drop over - t;
 
 \ t: query ( -- ) tib @ 50 lit accept #tib ! drop 0 lit >in ! t;
 
+\ https://wiki.c2.com/?ForthSimplicity
+\ : IMMEDIATE?	-1 = ;
+\ : NEXTWORD	BL WORD FIND ;
+\ : NUMBER,	NUMBER POSTPONE LITERAL ;
+\ : COMPILEWORD	DUP IF IMMEDIATE? IF EXECUTE ELSE COMPILE, THEN ELSE NUMBER, THEN ;
+\ : ]	BEGIN NEXTWORD COMPILEWORD AGAIN ;
+\ : [	R> R> 2DROP ; IMMEDIATE	( Breaks out of compiler into interpret mode again )
 
 \ ht: do$ r> r> dup count + aligned >r swap >r t; ( -- a )
-\ ht: string-literal do$ t; ( -- a : do string NB. nop to fool optimizer )
+\ ht: string-literal do$ t; ( -- a : do string NB. )
 \ ht: print count type t;
 \ ht: .string do$ print t;      ( -- : print string  )
 \ : ." .string $literal" ;
+\ : $" string-literal $literal" ;
 
 \ t: nop t;
-\ t: exit t;
+\ TODO Arrange so these words have a lower priority then meta-compiler versions
 \ t: if t;
 \ t: else t;
 \ t: then t;
@@ -693,25 +714,31 @@ t: accept ( b u -- b u )
 \ t: immediate t;
 \ t: interpret t;
 \ t: quit t;
+\ t: find t;
+\ t: parse t;
+\ t: query t;
+\ t: number t;
 
-\ t: execute >r t;
+\ t: word ( 1depth ) parse ( ?length ) here pack$ t;
+\ t: token bl word t;
+\ t: pick ?dup if swap >r 1- pick r> swap exit then dup t; 
+\ t: .s ( -- ) cr sp@ for aft r@ pick . then next ."  <sp" cr t; ( -- )
+
+
 
 \ Test string 'HELLO WORLD'
 
 label: ahoy $literal" HELLO WORLD"
 
-t: # dup u. t;
+\ t: # dup u. t;
 
 t: cold
 	there 2/ <cold> t!
 
 	here u. cr
 
-	\ ." WOOP" cr
+	\ $" WOOP" u. u. cr
 	\ begin here 10 lit accept space type cr again
-	\ begin key u. cr again
-	\ begin key k? u. cr again
-	\ begin key dup bl # - # 7F lit # u< u. cr again
 
 	ahoy lit count type cr
 

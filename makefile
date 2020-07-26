@@ -28,7 +28,7 @@ documentation: readme.htm
 %.htm: %.md
 	pandoc $< -o $@
 
-bit.hex: bit.fth bit
+bit.hex bit.bin: bit.fth bit
 	gforth $<
 
 bit: bit.c
@@ -95,7 +95,7 @@ tmp/top.xst: tmp tmp/_xmsgs tmp/top.lso tmp/top.lso
 	    echo "-opt_level 2" \
 	) > tmp/top.xst
 
-synthesis: reports tmp tmp/_xmsgs tmp/top.prj tmp/top.xst
+synthesis: bit.hex reports tmp tmp/_xmsgs tmp/top.prj tmp/top.xst
 	@echo "Synthesis running..."
 	@${TIME} xst -intstyle silent -ifn tmp/top.xst -ofn reports/xst.log
 	@mv _xmsgs/* tmp/_xmsgs

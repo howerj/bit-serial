@@ -27,7 +27,7 @@ typedef struct {
 	mw_t ch, leds, switches;
 	/* options */
 	unsigned long cycles;
-	int forever;
+	int forever, done;
 	FILE *trace;
 } bcpu_t;
 
@@ -82,10 +82,8 @@ static int wrap_getch(bcpu_t *b) {
 	if (b->in != stdin)
 		return fgetc(b->in);
 	const int ch = getch();
-	if (ch == ESCAPE) {
-		(void)fprintf(stderr, "escape hit -- exiting\n");
-		exit(EXIT_SUCCESS);
-	}
+	if (ch == ESCAPE)
+		b->done = 1;
 	return ch == DELETE ? BACKSPACE : ch;
 }
 
@@ -130,7 +128,7 @@ static int debug(bcpu_t *b, const char *fmt, ...) {
 
 static int yn(bcpu_t *b, int idx, char ch, unsigned flg) {
 	assert(b);
-	char s[3] = { 1u << idx & flg ? ch : '-', ' ', '\0'};
+	char s[3] = { ((1u << idx) & flg) ? ch : '-', ' ', '\0'};
 	return fputs(s, b->trace) < 0 ? -1 : 0;
 }
 
@@ -250,6 +248,11 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 				r = -1;
 				goto halt;
 			}
+		if (b->done) {
+			if (debug(b, "{DONE}") < 0)
+				r = -1;
+			goto halt;
+		}
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
@@ -325,7 +328,7 @@ static int load(bcpu_t *b, FILE *input) {
 	assert(b);
 	assert(input);
 	for (size_t i = 0; i < MSIZE; i++) {
-		int pc = 0;
+		unsigned pc = 0;
 		if (fscanf(input, "%x", &pc) != 1)
 			break;
 		b->m[i] = pc;
@@ -337,7 +340,7 @@ static int save(bcpu_t *b, FILE *output) {
 	assert(b);
 	assert(output);
 	for (size_t i = 0; i < MSIZE; i++) /* option to save the rest of bcpu_t? */
-		if (fprintf(output, "%04x\n", (unsigned)(b->m[i])) < 0)
+		if (fprintf(output, "%04X\n", (unsigned)(b->m[i])) < 0)
 			return -1;
 	return 0;
 }

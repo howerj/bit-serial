@@ -108,7 +108,7 @@ synthesis: bit.hex reports tmp tmp/_xmsgs tmp/top.prj tmp/top.xst
 
 implementation: reports tmp
 	@echo "Implementation running..."
-	
+
 	@[ -d tmp/xlnx_auto_0_xdb ] || mkdir tmp/xlnx_auto_0_xdb
 
 	@${TIME} ngdbuild -intstyle silent -quiet -dd tmp -uc top.ucf -p xc6slx16-csg324-3 top.ngc top.ngd
@@ -131,7 +131,7 @@ implementation: reports tmp
 	@mv _xmsgs/* tmp/_xmsgs
 	@rmdir _xmsgs
 	@mv par_usage_statistics.html top.ptwx top.pad top_pad.csv top.unroutes top.xpi top_par.xrpt tmp
-	
+
 design.bit: reports tmp/_xmsgs
 	@echo "Generate bitfile running..."
 	@touch webtalk.log
@@ -144,7 +144,7 @@ design.bit: reports tmp/_xmsgs
 	@mv top.drc top_bitgen.xwbt top_usage.xml top_summary.xml webtalk.log tmp
 	@grep -i '\(warning\|clock period\)' reports/xst.log
 
-upload: 
+upload:
 	djtgcfg prog -d Nexys3 -i 0 -f design.bit
 
 design: clean simulation synthesis implementation bitfile

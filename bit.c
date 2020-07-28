@@ -20,10 +20,10 @@
 
 typedef uint16_t mw_t; /* machine word */
 
-typedef struct { 
-	mw_t pc, acc, flg, m[MSIZE]; 
-	/* io */ 
-	FILE *in, *out; 
+typedef struct {
+	mw_t pc, acc, flg, m[MSIZE];
+	/* io */
+	FILE *in, *out;
 	mw_t ch, leds, switches;
 	/* options */
 	unsigned long cycles;
@@ -37,7 +37,6 @@ enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
-extern int _fileno(FILE *stream);
 static void binary(FILE *f) { _setmode(_fileno(f), _O_BINARY); }
 #else
 static inline void binary(FILE *f) { UNUSED(f); }
@@ -132,15 +131,15 @@ static int yn(bcpu_t *b, int idx, char ch, unsigned flg) {
 	return fputs(s, b->trace) < 0 ? -1 : 0;
 }
 
-static int trace(bcpu_t *b, 
-		const unsigned cycles, const unsigned pc, const unsigned flg, 
+static int trace(bcpu_t *b,
+		const unsigned cycles, const unsigned pc, const unsigned flg,
 		const unsigned acc, const unsigned op1, const unsigned cmd) {
 	assert(b);
 	(void)(cycles);
 	if (!(b->trace))
 		return 0;
-	static const char *commands[] = { 
-		"ior",     "iand",    "ixor",     "iadd",  
+	static const char *commands[] = {
+		"ior",     "iand",    "ixor",     "iadd",
 		"ilshift", "irshift", "iload",    "istore",
 		"iloadc",  "istorec", "iliteral", "iunused",
 		"ijump",   "ijumpz",  "iset",     "iget",
@@ -221,7 +220,7 @@ static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	}
 	switch (addr & 0x7) {
 	case 0: b->leds = val; break;
-	case 1: 
+	case 1:
 		if (val & (1u << 13)) {
 			wrap_putch(b, val & 0xFFu);
 			fflush(b->out);
@@ -280,7 +279,7 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 		flg |= ((bits(acc) & 1u)) << fPAR;  /* set parity bit    */
 
 		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
-		const mw_t lop = loadit ? bload(b, op1) : op1; 
+		const mw_t lop = loadit ? bload(b, op1) : op1;
 
 		if (trace(b, count, pc, flg, acc, lop, cmd) < 0) {
 			r = -1;
@@ -306,12 +305,12 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 		case 0xC: pc = op1;                              break; /* JUMP    */
 		case 0xD: if (!acc) pc = op1;                    break; /* JUMPZ   */
 		case 0xE:                                               /* SET     */
-			if (op1 & 0x0800) { bstore(b, 0x8000u | op1, acc); } 
-			else { if (op1 & 1) flg = acc; else pc = acc; } 
+			if (op1 & 0x0800) { bstore(b, 0x8000u | op1, acc); }
+			else { if (op1 & 1) flg = acc; else pc = acc; }
 			break;
 		case 0xF:                                               /* GET */
-			if (op1 & 0x0800) { acc = bload(b, 0x8000u | op1); } 
-			else { if (op1 & 1) acc = flg; else acc = pc - 1u; } 
+			if (op1 & 0x0800) { acc = bload(b, 0x8000u | op1); }
+			else { if (op1 & 1) acc = flg; else acc = pc - 1u; }
 			break;
 		default: r = -1; goto halt;
 		}

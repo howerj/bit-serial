@@ -11,7 +11,7 @@ use std.textio.all;
 use work.util.all;
 use work.uart_pkg.all;
 
-entity peripherals is 
+entity peripherals is
 	generic (
 		g:                common_generics;
 		file_name:        string;
@@ -85,7 +85,7 @@ begin
 	uart: entity work.uart_top
 		generic map (g => g, baud => baud, use_fifo => use_uart_fifo)
 		port map(
-			clk => clk, rst => rst, 
+			clk => clk, rst => rst,
 
 			tx               =>  tx,
 			tx_fifo_full     =>  tx_fifo_full,
@@ -140,7 +140,7 @@ begin
 		f.r_ie          <= ie   after g.delay;
 		dre             <= '1'  after g.delay;
 		dwe             <= '0'  after g.delay;
-		tx_fifo_we      <= '0'  after g.delay; 
+		tx_fifo_we      <= '0'  after g.delay;
 		rx_fifo_re      <= '0'  after g.delay;
 		clock_reg_tx_we <= '0'  after g.delay;
 		clock_reg_rx_we <= '0'  after g.delay;
@@ -180,7 +180,7 @@ begin
 			else
 				case io_addr is
 				when "000" => f.r_ld <= c.r_i(c.r_ld'range) after g.delay;
-				when "001" =>	tx_fifo_we <= c.r_i(13) after g.delay; 
+				when "001" =>	tx_fifo_we <= c.r_i(13) after g.delay;
 						rx_fifo_re <= c.r_i(10) after g.delay;
 				when "010" => clock_reg_tx_we <= '1' after g.delay;
 				when "011" => clock_reg_rx_we <= '1' after g.delay;

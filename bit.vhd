@@ -17,7 +17,7 @@ use std.textio.all; -- for debug only, not needed for synthesis
 -- only one will be active at any time.
 --
 -- There are a few configurable items, but the defaults should work fine.
-entity bcpu is 
+entity bcpu is
 	generic (
 		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false
 		delay:              time       := 0 ns;   -- simulation only, gate delay
@@ -100,7 +100,7 @@ architecture rtl of bcpu is
 
 	-- 'bit_count' is used for assertions and nothing else. It counts the
 	-- number of bits in a 'std_ulogic_vector'.
-	function bit_count(bc: in std_ulogic_vector) return natural is 
+	function bit_count(bc: in std_ulogic_vector) return natural is
 		variable count: natural := 0;
 	begin
 		for index in bc'range loop
@@ -114,8 +114,8 @@ architecture rtl of bcpu is
 	-- Obviously this does not synthesis, which is why synthesis is turned
 	-- off for the body of this function, it does make debugging much easier
 	-- though, we will be able to see which instructions are executed and do so
-	-- by name. 
-	procedure print_debug_info is 
+	-- by name.
+	procedure print_debug_info is
 		variable ll: line;
 
 		function hx(slv: in std_ulogic_vector) return string is -- std_ulogic_vector to hex string
@@ -189,7 +189,7 @@ begin
 				c.dline <= (others => '0') after delay;
 				c.state <= RESET after delay;
 			else
-				-- These are just assertions/debug logging, they are not required for 
+				-- These are just assertions/debug logging, they are not required for
 				-- running, but we can make sure there are no unexpected state transitions,
 				-- and report on the internal state.
 				print_debug_info;
@@ -226,10 +226,10 @@ begin
 			assert bit_count(c.dline) = 1 report "missing dline bit";
 		end if;
 
-		-- The processor works by using a delay line (shift register) to 
-		-- sequence actions, the top four bits are used for the 
-		-- instruction (and if the highest bit is set indirection 
-		-- is _not_ allowed), with the lowest twelve bits as an operand 
+		-- The processor works by using a delay line (shift register) to
+		-- sequence actions, the top four bits are used for the
+		-- instruction (and if the highest bit is set indirection
+		-- is _not_ allowed), with the lowest twelve bits as an operand
 		-- to use as a literal value or an address.
 		--
 		-- As such, we will want to trigger actions when processing the first
@@ -280,7 +280,7 @@ begin
 		-- When in the running state all state transitions pass through FETCH.
 		-- FETCH does what you expect from it, it fetches the instruction. It also
 		-- partially decodes it and sets flags that the accumulator depends on.
-		-- 
+		--
 		-- What is meant by partially decoding is this; it is determined if we
 		-- should go to the INDIRECT state next or to the EXECUTE state, also
 		-- it is determined whether an I/O operation should be performed for those
@@ -451,7 +451,7 @@ begin
 				-- However, this instruction may not have its indirection bit set,
 				-- This would not be a problem for the swap instruction. Alternatively
 				-- and 'add-constant' could be added.
-				-- 
+				--
 				when iJUMP =>
 					ae       <=     '1' after delay;
 					a        <= c.op(0) after delay;

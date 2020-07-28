@@ -17,10 +17,10 @@ CPU. This allows the CPU itself to be a lot smaller, the penalty is that it is
 *a lot* slower. The CPU itself is called *bcpu*.
 
 The CPU is incredibly basic, lacking features required to support
-higher level programming (such as function calls). Instead such features can 
+higher level programming (such as function calls). Instead such features can
 be emulated if they are needed. If such features are needed, or faster
 throughput (whilst still remaining quite small) other [Soft-Core][] CPUs are
-available, such as the [H2][]. 
+available, such as the [H2][].
 
 To build and run the C based simulator for the project, you will need a C
 compiler and 'make'. To build and run the [VHDL][] simulator, you will need [GHDL][]
@@ -37,7 +37,7 @@ The following 'make' targets are available:
 	make
 
 By default the [VHDL][] test bench is built and simulated in [GHDL][]. This
-requires [gforth][] to assemble the test program [bit.fth][] into a file 
+requires [gforth][] to assemble the test program [bit.fth][] into a file
 readable by the simulator.
 
 	make run
@@ -81,8 +81,8 @@ In short, the project may be useful if:
 # CPU Specification
 
 The CPU is a 16-bit design, in principle a normal bit parallel CPU design could
-be implemented of the same CPU, but in practice you not end up with a CPU like 
-this one if you remove the bit-serial restriction. 
+be implemented of the same CPU, but in practice you not end up with a CPU like
+this one if you remove the bit-serial restriction.
 
 The CPU has 16 operation, each instruction consists of a 4-bit operation field
 and a 12-bit operand. Depending on the CPU mode that operand and instruction
@@ -141,7 +141,7 @@ anded with '0xF' and not '0x0'.
 
 The number of cycles an instruction takes to complete depends on whether it
 performs an indirection, or in the case of GET/SET it depends if it it setting
-the program counter (2 cycles only) or the flags register (3 cycles), or performing 
+the program counter (2 cycles only) or the flags register (3 cycles), or performing
 an I/O operation (4 cycles), getting the flags or program counter always costs
 3 cycles.
 
@@ -152,7 +152,7 @@ The flags in the 'flg' register are:
 	| ---- | --- | --------------------------------------- |
 	| Cy   |  0  | Carry flag, set by addition instruction |
 	| Z    |  1  | Zero flag                               |
-	| Ng   |  2  | Negative flag                           | 
+	| Ng   |  2  | Negative flag                           |
 	| PAR  |  3  | Parity flag, parity of accumulator      |
 	| ROT  |  4  | If set, shifts become rotates           |
 	| R    |  5  | Reset Flag - Resets the CPU             |
@@ -165,7 +165,7 @@ with the GET/SET instructions.
 * 'Z' is set whenever the accumulator is zero.
 * 'Ng' is set whenever the accumulator has its highest bit set, indicating that
   the accumulator is negative.
-* 'PAR' is the parity of the accumulator, the parity flag can be compiled at 
+* 'PAR' is the parity of the accumulator, the parity flag can be compiled at
 synthesis time to even or odd parity.
 * 'ROT', if set, means the 'LSHIFT' and 'RSHIFT' instructions will perform
 rotations instead of left/right shifts.
@@ -183,14 +183,14 @@ enable lines. Much like the processor, a single bit bus in conjunction with an
 enable is used to communicate with the outside world.
 
 The internal state of the CPU is minimal, to make a working system the memory
-and I/O controller will need (shift) registers to store the address and 
+and I/O controller will need (shift) registers to store the address and
 input/output.
 
 # Peripherals
 
 The system has a minimal set of peripherals; a bank of switches with LEDs next
 to each switch and a UART capable of transmission and reception, other
-peripherals could be added as needed. 
+peripherals could be added as needed.
 
 ## Register Map
 
@@ -275,7 +275,7 @@ Defaults are: 115200 Baud
 
 * UART Clock Control
 
-This clock is used to control UART options such as the number of bits, 
+This clock is used to control UART options such as the number of bits,
 
 Defaults are: 8N1, no parity
 
@@ -289,7 +289,7 @@ Defaults are: 8N1, no parity
 	UPA       = USE PARITY BITS
 	EPA       = EVEN PARITY
 	STPBITS   = Number of stop bits
-	DATA BITS = Number of data bits 
+	DATA BITS = Number of data bits
 
 
 # Other Soft Microprocessors
@@ -313,7 +313,7 @@ assembler. See <https://github.com/howerj/forth-cpu>.
 This CPU core has deeper stacks, more instructions, and interrupts, which the
 original J1 core lacks. It is also written in VHDL instead of Verilog.
 
-* Tiny CPU in a CPLD 
+* Tiny CPU in a CPLD
 
 This is a 8-bit CPU designed to fit in the limited resources of a CPLD:
 
@@ -322,7 +322,7 @@ See <https://www.bigmessowires.com/cpu-in-a-cpld/> and
 
 It is written in Verilog, it is based on the 6502, implementing a subset of its
 instructions. It is probably easier to directly program than this bit-serial
-CPU, and roughly the same size (although a direct comparison is difficult).  
+CPU, and roughly the same size (although a direct comparison is difficult).
 It can address less memory (1K) without bank-switching. There is also a
 different version made with 7400 series logic gates
 <https://www.bigmessowires.com/nibbler/>.
@@ -363,7 +363,7 @@ different version made with 7400 series logic gates
   course be bigger, and some instructions may be difficult to implement (the
   shift/rotates).
 * Variable cycle states should have been used, FETCH could be 4/5 cycles,
-  INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and 
+  INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and
   EXECUTE 16/17 along with the other instructions.
 * The CPU could be simplified further if we are willing to use self-modifying
   code, this could be done by removing the indirection options, this would
@@ -378,7 +378,7 @@ different version made with 7400 series logic gates
   program in itself easily lends itself to abstractions. All these things
   are for different projects however. We could remove some instructions from
   the current set if we can map the registers into memory space like the I/O
-  is. 
+  is.
 
 # References / Appendix
 
@@ -392,7 +392,7 @@ edited immediately by copying the following text into [GraphvizOnline][].
 		fetch -> indirect [label="flag(IND) = '1'\n and op < 8"]
 		fetch -> reset  [label="flag(RST) = '1'"]
 		fetch -> halt  [label="flag(HLT) = '1'"]
-		indirect -> operand 
+		indirect -> operand
 		operand -> execute
 		execute -> advance
 		execute -> store   [label="op = 'store'"]
@@ -404,7 +404,7 @@ edited immediately by copying the following text into [GraphvizOnline][].
 		halt -> halt
 	}
 
-	
+
 For timing diagrams, use [Wavedrom][] with the following text:
 
 	{signal: [
@@ -418,7 +418,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'i',     wave: 'x...................'},
 	  {name: 'halt',  wave: 'x1..................'},
 	  {},
-	  
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['ADVANCE']},
@@ -429,9 +429,9 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'i',     wave: 'x.................xx'},
 	  {name: 'halt',  wave: 'x0.................x'},
 	  {},
-	  
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
-	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},      
+	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['OPERAND or LOAD']},
 	  {name: 'ie',    wave: 'x01...............0x'},
 	  {name: 'oe',    wave: 'x0.................x'},
@@ -439,8 +439,8 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'o',     wave: 'x0.................x'},
 	  {name: 'i',     wave: 'x.================xx', data: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15']},
 	  {name: 'halt',  wave: 'x0.................x'},
-	  {}, 
-	  
+	  {},
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['STORE']},
@@ -451,7 +451,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'i',     wave: 'x.................xx'},
 	  {name: 'halt',  wave: 'x0.................x'},
 	  {},
-	  
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['INDIRECT or EXECUTE: LOAD, STORE, JUMP, JUMPZ']},
@@ -462,9 +462,9 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'i',     wave: 'x.................xx'},
 	  {name: 'halt',  wave: 'x0.................x'},
 	  {},
-	  
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
-	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},      
+	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['EXECUTE: NORMAL INSTRUCTION']},
 	  {name: 'ie',    wave: 'x0.................x'},
 	  {name: 'oe',    wave: 'x0.................x'},
@@ -473,7 +473,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'i',     wave: 'x.................xx'},
 	  {name: 'halt',  wave: 'x0.................x'},
 	  {},
-	  
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['FETCH']},
@@ -484,7 +484,7 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'i',     wave: 'x.================xx', data: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15']},
 	  {name: 'halt',  wave: 'x0.................x'},
 	  {},
-	  
+
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
 	  {name: 'cmd',   wave: 'x2................xx', data: ['RESET']},
@@ -492,10 +492,10 @@ For timing diagrams, use [Wavedrom][] with the following text:
 	  {name: 'oe',    wave: 'x0.................x'},
 	  {name: 'ae',    wave: 'x01...............0x'},
 	  {name: 'o',     wave: 'x0.................x'},
-	  {name: 'i',     wave: 'x.................xx'},  
+	  {name: 'i',     wave: 'x.................xx'},
 	  {name: 'halt',  wave: 'x0.................x'},
 	  {},
-	  
+
 	]}
 
 
@@ -535,7 +535,7 @@ That's all folks!
 		line-height:1.2;
 	}
 	table {
-		width: 100%; 
+		width: 100%;
 		border-collapse: collapse;
 	}
 	table, th, td{
@@ -547,13 +547,13 @@ That's all folks!
     		margin-left: auto;
     		margin-right: auto;
 	}
-	code { 
-		color: #091992; 
+	code {
+		color: #091992;
 		display: block;
 		margin: 0 auto;
     		margin-left: auto;
     		margin-right: auto;
 
-	} 
+	}
 </style>
 

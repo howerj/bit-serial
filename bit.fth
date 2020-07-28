@@ -1,31 +1,19 @@
-( 
-
-Cross Compiler for the bit-serial CPU available a:t
-
-  <https://github.com/howerj/bit-serial> 
-
-
-This implements a Direct Threaded Code virtual machine on which we can
-build a Forth interpreter.
-
-References:
-
-- <https://en.wikipedia.org/wiki/Threaded_code>
-- <https://github.com/samawati/j1eforth> 
-- <https://github.com/howerj/embed> 
-- <https://github.com/howerj/forth-cpu>
-
-TODO:
-
-- Optimizations; move stacks/buffers to end of [8KiB] memory, add a opVar and
-opConst VM instruction and use it, size optimizations, implement words for
-certain numbers [to decrease image size], ...
-- Implement a basic Forth interpreter [done]
-- Make the interpreter useful
-- Add compiler safety
-- vector some words?
-
-)
+\ 
+\ Cross Compiler for the bit-serial CPU available a:t
+\ 
+\   <https://github.com/howerj/bit-serial>
+\ 
+\ 
+\ This implements a Direct Threaded Code virtual machine on which we can
+\ build a Forth interpreter.
+\ 
+\ References:
+\ 
+\ - <https://en.wikipedia.org/wiki/Threaded_code>
+\ - <https://github.com/samawati/j1eforth>
+\ - <https://github.com/howerj/embed>
+\ - <https://github.com/howerj/forth-cpu>
+\ 
 
 only forth definitions hex
 
@@ -41,7 +29,6 @@ wordlist constant target.only.1
 : -order ( wid -- ) get-order (order) nip set-order ;
 : +order ( wid -- ) dup >r -order get-order r> swap 1+ set-order ;
 
-\ get-current meta.1 set-current drop
 meta.1 +order definitions
 
    2 constant =cell
@@ -61,60 +48,59 @@ variable tlast
 size =cell - tep !
 0 tlast !
 
-: :m meta.1 +order definitions postpone : ;
+: :m meta.1 +order definitions : ;
 : ;m postpone ; ; immediate
-\ : :a assembler.1 +order definitions postpone : ;
-\ : ;a postpone ; ; immediate
-
-: there tdp @ ;
-: tc! tflash + c! ;
-: tc@ tflash + c@ ;
-: t! over ff and over tc! swap 8 rshift swap 1+ tc! ;
-: t@ dup tc@ swap 1+ tc@ 8 lshift or ;
-: talign there 1 and tdp +! ;
-: tc, there tc! 1 tdp +! ;
-: t, there t! 2 tdp +! ;
-: $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;
-: tallot tdp +! ;
-: org tdp ! ;
-: thead 
-  talign 
+:m there tdp @ ;m
+:m tc! tflash + c! ;m
+:m tc@ tflash + c@ ;m
+:m t! over ff and over tc! swap 8 rshift swap 1+ tc! ;m
+:m t@ dup tc@ swap 1+ tc@ 8 lshift or ;m
+:m talign there 1 and tdp +! ;m
+:m tc, there tc! 1 tdp +! ;m
+:m t, there t! 2 tdp +! ;m
+:m $literal [char] " word count dup tc, 0 ?do count tc, loop drop talign ;m
+:m tallot tdp +! ;m
+:m thead
+  talign
   there tlast @ t, tlast !
-  parse-word dup tc, 0 ?do count tc, loop drop talign ;
-
-: hex# ( u -- addr len )  0 <# base @ >r hex =lf hold # # # # r> base ! #> ;
-: save-hex ( <name> -- )
+  parse-word dup tc, 0 ?do count tc, loop drop talign ;m
+:m hex# ( u -- addr len )  0 <# base @ >r hex =lf hold # # # # r> base ! #> ;m
+:m save-hex ( <name> -- )
   parse-word w/o create-file throw
   there 0 do i t@  over >r hex# r> write-file throw =cell +loop
-   close-file throw ;
-: save-target ( <name> -- )
+   close-file throw ;m
+:m save-target ( <name> -- )
   parse-word w/o create-file throw >r
-   tflash there r@ write-file throw r> close-file ;
-: .h base @ >r hex     u. r> base ! ;
-: .d base @ >r decimal u. r> base ! ;
-: twords
+   tflash there r@ write-file throw r> close-file ;m
+:m .h base @ >r hex     u. r> base ! ;m
+:m .d base @ >r decimal u. r> base ! ;m
+:m twords
    cr tlast @
    begin
       dup tflash + =cell + count 1f and type space t@
-   ?dup 0= until ;
-: .stat ( ." words> " twords cr ) ." used> " there dup ." 0x" .h ." / " .d cr ;
-: .end only forth definitions decimal ;
-: atlast tlast @ ;
-: tvar   create there , t, does> @ ;
-: label: create there ,    does> @ ;
-: asm[ assembler.1 +order ;
-: ]asm assembler.1 -order ;
-: tdown =cell negate and ;
-: word.length $1F and ;
-: tnfa =cell + ; ( pwd -- nfa : move to name field address)
-: tcfa tnfa dup c@ word.length + =cell + tdown ; ( pwd -- cfa )
-: compile-only tlast @ tnfa t@ $20 or tlast @ tnfa t! ; ( -- )
-: immediate    tlast @ tnfa t@ $40 or tlast @ tnfa t! ; ( -- )
-: t' ' >body @ ;
-
+   ?dup 0= until ;m
+:m .stat 
+	0 if
+		." target: "      target.1      +order words cr cr
+		." target-only: " target.only.1 +order words cr cr
+		." assembler: "   assembler.1   +order words cr cr
+		." meta: "        meta.1        +order words cr cr
+	then
+	." used> " there dup ." 0x" .h ." / " .d cr ;m
+:m .end only forth definitions decimal ;m
+:m atlast tlast @ ;m
+:m tvar   get-current >r meta.1 set-current create r> set-current there , t, does> @ ;m
+:m label: get-current >r meta.1 set-current create r> set-current there ,    does> @ ;m
+:m tdown =cell negate and ;m
+:m tnfa =cell + ;m ( pwd -- nfa : move to name field address)
+:m tcfa tnfa dup c@ $1F and + =cell + tdown ;m ( pwd -- cfa )
+:m compile-only tlast @ tnfa t@ $20 or tlast @ tnfa t! ;m ( -- )
+:m immediate    tlast @ tnfa t@ $40 or tlast @ tnfa t! ;m ( -- )
+:m t' ' >body @ ;m
+:m call 2/ C000 or ;
 \ TODO Place these in an assembler vocabulary, and drop the 'a' prefix
 
-\ assembler.1 +order definitions
+\ assembler.1 +order 
 
 : iOR      0000 or t, ;
 : iAND     1000 or t, ;
@@ -145,13 +131,13 @@ size =cell - tep !
 
 : flags? 1 iGET ;
 : flags! 1 iSET ;
-: clr 0 iLITERAL ;
 : halt!  flgHlt iLITERAL flags! ;
 : reset! flgR   iLITERAL flags! ;
 : branch  2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
 : zero? flags? 2 iAND ;
-\ : topost target.only.1 +order ' >body @ branch target.only.1 -order ;
+: topost target.only.1 +order ' >body @ branch target.only.1 -order  ;
+:m postpone t' branch ;m
 
 assembler.1 +order definitions
 : begin there ;
@@ -195,36 +181,30 @@ label: RSTACK \ Return stack start, grows upwards
 =stksz tallot
 label: VSTACK \ Variable stack *end*, grows downwards
 =stksz tallot
+label: {pad}
+=buf   tallot
 VSTACK =stksz + 2/ dup tvar {sp0} tvar {sp}  \ variable stack pointer
 RSTACK          2/ dup tvar {rp0} tvar {rp}  \ return stack pointer
 0 tvar #tib    \ terminal input buffer
 label: TERMBUF
 =buf   tallot
-label: {pad}
-=buf   tallot
 1000 tvar tx-full-mask
 2000 tvar tx-write-mask
 100 tvar rx-empty-mask
 400 tvar rx-re-mask
-3   tvar test-mask
 FF  tvar low-byte-mask
 
 \ TODO: add to assembler vocabulary
 : fdefault flgInd iLITERAL flags! ;
 : vcell 1 ( cell '1' should contain '1' ) ;
 : -vcell set 2/ ;
-: pc! 0 iSET ; ( acc -> pc )
 : --sp {sp} iLOAD-C  vcell iADD {sp} iSTORE-C ;
 : ++sp {sp} iLOAD-C -vcell iADD {sp} iSTORE-C fdefault ;
 : --rp {rp} iLOAD-C -vcell iADD {rp} iSTORE-C fdefault ;
 : ++rp {rp} iLOAD-C  vcell iADD {rp} iSTORE-C ;
 
-\ The code for the virtual machine proper starts here, it consists of only
-\ a few labels, some initialization code in 'start', the code that performs
-\ the dispatch in 'vm', and calls/returns in '{nest}' and '{unnest}'.
-
 label: start
-	start 2/ C000 or entry t!
+	start call entry t!
 	fdefault
 	{sp0} iLOAD-C {sp} iSTORE-C
 	{rp0} iLOAD-C {rp} iSTORE-C
@@ -238,7 +218,8 @@ label: vm
 	ip iLOAD-C
 	1 iADD
 	ip iSTORE-C
-	w iLOAD-C pc! \ jump to next token
+	w iLOAD-C 
+	0 iSET \ jump to next token
 
 label: {nest} ( accumulator must contain '0 iGET' )
 	w iSTORE-C ( store '0 iGET' into working pointer )
@@ -257,50 +238,48 @@ label: {unnest}
 	w iLOAD-C
 	ip iSTORE-C
 	vm branch
-	
-: nest 0 iGET {nest} branch ;
-: unnest {unnest} branch ;
-: =nest {nest} 2/ C000 or ;
-: =unnest {unnest} 2/ C000 or ;
-: =0iGET F000 ;
 
-: :ht ( "name" -- : forth only routine )
+:m nest 0 iGET {nest} branch ;m
+:m unnest {unnest} branch ;m
+:m =nest {nest} call ;m
+:m =unnest {unnest} call ;m
+:m =0iGET F000 ;m
+
+:m :ht ( "name" -- : forth only routine )
 	get-current >r target.1 set-current create
 	r> set-current CAFEBABE talign there ,
 	nest
-	does> @ branch ( really a call ) ;
+	does> @ branch ( really a call ) ;m
 
-: :t ( "name" -- : forth only routine )
+:m :t ( "name" -- : forth only routine )
 	>in @ thead >in !
 	get-current >r target.1 set-current create
-	r> set-current CAFEBABE talign there , 
+	r> set-current CAFEBABE talign there ,
 	nest
-	does> @ branch ( really a call ) ;
+	does> @ branch ( really a call ) ;m
 
-: :to ( "name" -- : forth only, target only routine )
+:m :to ( "name" -- : forth only, target only routine )
 	>in @ thead >in !
-	get-current >r target.only.1 set-current create
-	r> set-current there ,
-	nest CAFEBABE 
-	does> @ branch ;
+	get-current >r target.only.1 set-current create r> set-current 
+	there ,
+	nest CAFEBABE
+	does> @ branch ;m
 
-: ;t CAFEBABE <> if abort" unstructured" then unnest target.only.1 -order ; 
+:m ;t CAFEBABE <> if abort" unstructured" then unnest target.only.1 -order ;
 
-: a: ( "name" -- : assembly only routine, no header )
-     CAFED00D
-     create talign there ,  
-     assembler.1 +order
-     does> @ branch ;
-: a; CAFED00D <> if abort" unstructured" then vm branch ]asm ;
-
-\ TODO: hide/unhide vocabs depending in :t/a:/ha:
-target.1 +order definitions
+:m a: ( "name" -- : assembly only routine, no header )
+	CAFED00D
+	target.1 +order definitions
+	create talign there ,
+	assembler.1 +order
+	does> @ branch ;m
+:m a; CAFED00D <> if abort" unstructured" then vm branch assembler.1 -order ;m
 
 a: opPush
 	++sp
 	tos iLOAD-C
 	{sp} iSTORE
-	
+
 	ip iLOAD-C
 	w iSTORE-C
 	w iLOAD
@@ -329,20 +308,7 @@ a: opJumpZ
 	then
 	a;
 
-meta.1 +order definitions
-: lit         opPush t, ;
-: [char] char opPush t, ;
-: char   char opPush t, ;
-: =push  [ t' opPush  ] literal 2/ C000 or  ;
-: =jump  [ t' opJump  ] literal 2/ C000 or  ;
-: =jumpz [ t' opJumpZ ] literal 2/ C000 or  ;
-target.1 -order
-target.1 +order definitions meta.1 +order
-
 a: opNext
-	\ Get r@
-	\ if r> 1- >r exit then
-	\ jump to next cell location
 	{rp} iLOAD
 	if
 		set 2/ iADD
@@ -356,26 +322,26 @@ a: opNext
 	then
 	a;
 
+:m lit         opPush t, ;m
+:m [char] char opPush t, ;m
+:m char   char opPush t, ;m
+:m =push  [ t' opPush  ] literal call  ;m
+:m =jump  [ t' opJump  ] literal call  ;m
+:m =jumpz [ t' opJumpZ ] literal call  ;m
+:m begin talign there ;m
+:m until talign opJumpZ 2/ t, ;m
+:m again talign opJump  2/ t, ;m
+:m if opJumpZ there 0 t, ;m
+:m skip opJump there 0 t, ;m
+:m then there 2/ swap t! ;m
+:m else skip swap then ;m
+:m while if ;m
+:m repeat swap again then ;m
+:m aft drop skip begin swap ;m
+:m next talign opNext 2/ t, ;m
 
-meta.1 +order definitions
-
-: begin talign there ;
-: until talign opJumpZ 2/ t, ;
-: again talign opJump  2/ t, ;
-: if opJumpZ there 0 t, ;
-: skip opJump there 0 t, ;
-: then there 2/ swap t! ;
-: else skip swap then ;
-: while if ;
-: repeat swap again then ;
-: aft drop skip begin swap ;
-: next talign opNext 2/ t, ;
-
-target.1 +order definitions meta.1 +order
-
-\ TODO: Fix bug -- cannot execute assembly instructions
-a: halt halt! a;
-a: bye reset! a;
+a: reset reset! a;
+a: bye halt! a;
 a: exit unnest a;
 
 a: lls ( u shift -- u : shift left by number of bits set )
@@ -406,7 +372,7 @@ a: or
 	--sp
 	a;
 
-a: xor 
+a: xor
 	{sp} iLOAD
 	tos 2/ iXOR
 	tos iSTORE-C
@@ -428,22 +394,19 @@ a: +
 	a;
 
 
-a: um+ 
+a: um+
 	{sp} iLOAD
 	tos 2/ iADD
 	{sp} iSTORE
 	flags?
 	flgCy iAND
-	if 
+	if
 		1 iLITERAL
 	else
 		0 iLITERAL
 	then
 	tos iSTORE-C
 	fdefault a;
-
-\ NOTE: @/! cannot perform I/O operations, we will need new words for that, as
-\ they cannot write to the top bit.
 
 a: @
 	tos iLOAD-C
@@ -472,12 +435,12 @@ a: c@
 	w iLOAD
 	w iSTORE-C
 	tos iLOAD-C
-	1 iAND zero? if
-		w iLOAD-C
-		low 2/ iAND
-	else
+	1 iAND if
 		w iLOAD-C
 		low 2/ iRSHIFT
+	else
+		w iLOAD-C
+		low 2/ iAND
 	then
 	tos iSTORE-C
 	a;
@@ -533,12 +496,10 @@ a: >r
 	tos iSTORE-C
 	--sp
 	a;
-	
-target.1 +order meta.1 +order definitions
-: for talign >r begin ;
-: =>r [ t' >r target.1 -order ] literal 2/ C000 or ; target.1 +order
-: =next [ t' opNext target.1 -order ] literal 2/ C000 or ;
-target.1 +order definitions meta.1 +order
+
+:m for talign >r begin ;m
+:m =>r [ t' >r target.1 -order ] literal call ;m target.1 +order
+:m =next [ t' opNext target.1 -order ] literal call ;m
 
 a: r>
 	{rp} iLOAD
@@ -563,10 +524,7 @@ a: rdrop
 	--rp
 	a;
 
-\ TODO: Implement an 'io!' and 'io@' word set, then use this to implement
-\ 'tx!' and 'rx?', this might save space, and it would be more flexible.
-
-a: tx! ( ch -- )
+a: emit ( ch -- )
 	\ wait until not full
 	begin
 		801 iGET
@@ -585,7 +543,7 @@ a: tx! ( ch -- )
 	--sp
 	a;
 
-a: rx? ( -- ch -1 | 0 )
+a: key? ( -- ch -1 | 0 )
 	++sp
 	tos iLOAD-C
 	{sp} iSTORE
@@ -607,8 +565,16 @@ a: rx? ( -- ch -1 | 0 )
 	then
 	a;
 
-\ TODO: need a more efficient way of creating variables...
-a: 0= tos iLOAD-C zero? if set iLOAD-C else 0 iLOAD-C then tos iSTORE-C a;
+a: 0= 
+	tos iLOAD-C 
+	if 
+		0 iLOAD-C 
+	else 
+		set iLOAD-C 
+	then 
+	tos iSTORE-C 
+	a;
+
 a: execute
 	tos iLOAD-C
 	w iSTORE-C
@@ -616,14 +582,49 @@ a: execute
 	tos iSTORE-C
 	--sp
 	w iLOAD-C
-	1 iRSHIFT 
-	{nest} branch a;
+	1 iRSHIFT
+	{nest} branch 
+	a;
+
+a: sp!
+	tos iLOAD-C
+	{sp} iSTORE-C 
+	{sp} iLOAD
+	tos iSTORE-C
+	--sp
+	a;
+
+a: rp!
+	tos iLOAD-C
+	{rp} iSTORE-C
+	{sp} iLOAD
+	tos iSTORE-C
+	--sp 
+	a;
+
+a: sp@
+	{sp} iLOAD-C
+	w iSTORE-C
+	++sp
+	tos iLOAD-C
+	{sp} iSTORE
+	w iLOAD-C
+	tos iSTORE-C
+	a;
+
+a: rp@
+	++sp
+	tos iLOAD-C
+	{sp} iSTORE
+	{rp} iLOAD-C
+	tos iSTORE-C
+	a;
 
 \ ---- --- ---- ---- ---- no more direct assembly ---- ---- ---- ---- ----
 
 assembler.1 -order
 
-:to halt halt ;t
+:to reset reset ;t
 :to bye bye ;t
 :to exit exit ;t
 :to and and ;t
@@ -645,18 +646,18 @@ assembler.1 -order
 :to r> r> r> swap >r ;t
 :to r@ r> r@ swap >r ;t
 :to rdrop rdrop ;t
-:to tx! tx! ;t
-:to rx? rx? ;t
+:to emit emit ;t
+:to key? key? ;t
 :to 0= 0= ;t
+:to sp! sp! ;t
+:to rp! rp! ;t
+:to sp@ sp@ ;t
+:to rp@ rp@ ;t
 :to execute execute ;t
 \ TODO: Create special variables for these.
 :t here h lit @ ;t
 :t sp0 {sp0} lit @ ;t
 :t rp0 {rp0} lit @ ;t
-:t sp@ {sp} lit @ ;t
-:t rp@ {rp} lit @ ;t
-:t sp! {sp} lit ! ;t
-:t rp! {rp} lit ! ;t
 :t base {base} lit ;t
 :t dpl {dpl} lit ;t
 :t hld {hld} lit ;t
@@ -669,11 +670,11 @@ assembler.1 -order
 :t tib source drop ;t
 :t last {last} lit @ ;t
 :t state {state} lit ;t
+:t ] -1 lit state ! ;t
 :t [ 0 lit state ! ;t immediate
-:t ] -1 lit state ! ;t 
 :t nip swap drop ;t
 :t tuck swap over ;t
-:t ?dup  dup if dup then exit ;t ( w -- w w | 0 )
+:t ?dup dup if dup then exit ;t  ( w -- w w | 0 )
 :t rot >r swap r> swap ;t        ( w1 w2 w3 -- w2 w3 w1 )
 :t -rot rot rot ;t               ( w1 w2 w3 -- w2 w3 w1 )
 :t 2drop  drop drop ;t           ( w w -- )
@@ -682,68 +683,56 @@ assembler.1 -order
 :t 2r> r> r> swap r> swap >r ;t
 :t +! tuck @ + swap ! ;t ( n a -- )
 :t 1+! 1 lit swap +! ;t
-:t 1-! -1 lit swap +! ;t
-:t = xor 0= ;t 
+:t = xor 0= ;t
 :t <> = 0= ;t
 :t 0<> 0= 0= ;t
 :t 0>= 8000 lit and 0= ;t
 :t 0< 8000 lit and 0= 0= ;t
 :t negate 1- invert ;t
-:t - negate + ;t
+:t - 1- invert + ;t
 :t < - 0< ;t
 :t > swap < ;t
 :t 0> 0 lit > ;t
 :t 2* 1 lit lls ;t
 :to 2/ 1 lit lrs ;t
 :t cell 2 lit ;t
-:t cell+ 2 lit + ;t
-:t cell- 2 lit - ;t
-:t cells 2* ;t
-:t chars 1 lit lrs ;t
+:t cell+ cell + ;t
 :t u< 2dup 0>= swap 0>= xor >r < r> xor ;t
-:t u> swap u< ;t
 :t aligned dup 1 lit and + ;t
 :t align here aligned h lit ! ;t
-:t depth sp0 sp@ - 2 lit - ;t
+:t depth sp0 sp@ - 1- ;t
 :t c! ( c b -- )
-	dup 1 lit and if
-		dup >r @ 00FF lit and swap FF lit lls or r> !
-	else
-		dup >r @ FF00 lit and swap FF lit and or r> !
-	then ;t
+  dup 1 lit and if
+    dup >r @ 00FF lit and swap FF lit lls or r> !
+  else
+    dup >r @ FF00 lit and swap FF lit and or r> !
+  then ;t
 :t count dup 1+ swap c@ ;t ( b -- b u )
 :t , here dup cell+ h lit ! ! ;t ( u -- )
 :t allot aligned h lit +! ;t     ( u -- )
-:t c, here c! h lit 1+! ;t       ( c -- )
 :t dnegate invert >r invert 1 lit um+ r> + ;t ( d -- -d )
-:t d0= or 0= ;t                          ( d -- f )
-:t d+ >r swap >r um+ r> + r> + ;t        ( d d -- d )
-:t abs  dup 0< if negate then exit ;t    ( n -- n )
-:t max  2dup > if drop exit then nip ;t  ( n n -- n )
-:t min  2dup < if drop exit then nip ;t  ( n n -- n )
-:t within over - >r - r> u< ;t           ( u ul uh -- t )
-:t /string over min rot over + -rot - ;t ( b u1 u2 -- b u : advance string )
-:t +string 1 lit /string ;t              ( b u -- b u : advance string by 1 )
-:t pick ?dup if swap >r 1- pick r> swap exit then dup ;t \ TODO replace with more efficient version
-:t ndrop for aft drop then next ;t \ TODO replace with more efficient version
-:t catch  ( xt -- exception# | 0 : return addr on stack )
-  sp@ >r        ( xt : save data stack depth )
-  {handler} lit @ >r  ( xt : and previous handler )
-  rp@ {handler} lit ! ( xt : set current handler )
-  execute       (      execute returns if no throw )
-  r> {handler} lit !  (      restore previous handler )
-  rdrop         (      discard saved stack ptr )
-  0 lit ;t      ( 0  : normal completion )
-:t throw  ( ??? exception# -- ??? exception# )
-  ?dup if ( exc# \ 0 throw is no-op )
-    {handler} lit @ rp! ( exc# : restore prev return stack )
-    r> {handler} lit !  ( exc# : restore prev handler )
-    r> swap >r ( saved-sp : exc# on return stack )
-    sp@ swap - ndrop r>   ( exc# : restore stack )
-    ( return to the caller of catch because return )
-    ( stack is restored to the state that existed )
-    ( when catch began execution )
-  then ;t
+:t d0= or 0= ;t                         ( d -- f )
+:t d+ >r swap >r um+ r> + r> + ;t       ( d d -- d )
+:t abs dup 0< if negate then exit ;t    ( n -- n )
+:t max 2dup > if drop exit then nip ;t  ( n n -- n )
+:t min 2dup < if drop exit then nip ;t  ( n n -- n )
+:t +string 1 lit over min rot over + -rot - ;t ( b u -- b u : increment str )
+:t pick sp@ + 2* @ ;t
+:t catch ( xt -- exception# | 0 \ return addr on stack )
+   sp@ >r              ( xt )       \ save data stack pointer
+   {handler} lit @ >r  ( xt )       \ and previous handler
+   rp@ {handler} lit ! ( xt )       \ set current handler
+   execute             ( )          \ execute returns if no throw
+   r> {handler} lit !  ( )          \ restore previous handler
+   r> drop             ( )          \ discard saved stack ptr
+   0 lit ;t            ( 0 )        \ normal completion
+:t throw ( ??? exception# -- ??? exception# )
+    ?dup if	            ( exc# )     \ 0 throw is no-op
+      {handler} lit @ rp!   ( exc# )     \ restore prev return stack
+      r> {handler} lit !    ( exc# )     \ restore prev handler
+      r> swap >r            ( saved-sp ) \ exc# on return stack
+      sp! drop r>           ( exc# )     \ restore stack
+    then ;t
 :t um* ( u u -- ud )
 	0 lit swap ( u1 0 u2 ) $F lit
 	for dup um+ >r >r dup um+ r> + r>
@@ -751,7 +740,7 @@ assembler.1 -order
 	next rot drop ;t
 :t *    um* drop ;t  ( n n -- n )
 :t um/mod ( ud u -- ur uq )
-  \ ?dup 0= if $A lit -throw exit then
+  ?dup 0= if -A lit throw then
   2dup u<
   if negate $F lit
     for >r dup um+ >r >r dup um+ r> + dup
@@ -767,13 +756,9 @@ assembler.1 -order
   then
   >r dup 0< if r@ + then r> um/mod r>
   if swap negate swap exit then ;t
-\ :t */ >r um* r> m/mod nip ;t ( n n n -- )
 :t /mod  over 0< swap m/mod ;t ( n n -- r q )
-:t mod  /mod drop ;t           ( n n -- r )
 :t /    /mod nip ;t            ( n n -- q )
-:t key? rx? ;t
-:t key begin rx? until ;t
-:t emit tx! ;t
+:t key begin key? until ;t
 :t type begin dup while swap count emit swap 1- repeat 2drop ;t ( b u -- )
 :t fill  swap for swap aft 2dup c! 1+ then next 2drop ;t     ( b u c -- )
 :t cmove  for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;t ( b1 b2 u -- )
@@ -781,18 +766,18 @@ assembler.1 -order
 :t space bl emit ;t
 :t cr =cr lit emit =lf lit emit ;t
 :t ok space char o emit char k emit cr ;t
-:t ^h ( bot eot cur -- bot eot cur )
-	>r over r@ < dup if
-		=bksp lit dup emit space emit
-	then 
-	r> + ;t
 :t tap dup emit over c! 1+ ;t ( bot eot cur c -- bot eot cur )
 :t ktap ( bot eot cur c -- bot eot cur )
 	dup =cr lit xor if
 		=bksp lit xor ( delete? ) if
 			bl tap exit
-		then 
-		^h exit
+		then
+		( ^h : bot eot cur -- bot eot cur )
+		>r over r@ < dup if
+			=bksp lit dup emit space emit
+		then
+		r> +
+		exit
 	then drop nip dup ;t
 :t accept ( b u -- b u )
 	over + over
@@ -802,6 +787,7 @@ assembler.1 -order
 		key dup bl - $5F lit u< if tap else ktap then
 	repeat drop over - ;t
 :t query TERMBUF lit =buf lit accept #tib lit ! drop 0 lit >in ! ;t
+:t ?depth depth 1- > if -4 lit throw then ;t
 :t -trailing ( b u -- b u : remove trailing spaces )
   for
     aft bl over r@ + c@ <
@@ -826,24 +812,21 @@ assembler.1 -order
 :t parse ( c -- b u ; <string> )
     >r tib >in @ + #tib lit @ >in @ - r@ parser >in +!
     r> bl = if -trailing then 0 lit max ;t
-:t nchars                              ( +n c -- : emit c n times )
-   swap 0 lit max for aft dup emit then next drop ;t
-:t spaces bl nchars ;t ( +n -- )
+:t spaces begin dup 0> while space 1- repeat drop ;t ( +n -- )
 :t digit 9 lit over < 7 lit and + [char] 0 + ;t         ( u -- c )
-:t hold hld @ 1- dup hld ! c! ( hld @ pad $80 - u> ?exit $11 -throw ) ;t ( c -- )
-:t extract dup >r um/mod r> swap >r um/mod r> rot ;t  ( ud ud -- ud u )
-:t #> 2drop hld @ pad over - ;t                ( w -- b u )
-:t #  ( 2 ?depth ) 0 lit base @ extract digit hold ;t  ( d -- d )
-:t #s begin # 2dup d0= until ;t               ( d -- 0 )
-:t <# pad hld ! ;t                            ( -- )
+:t hold hld @ 1- dup hld ! c! ;t ( c -- )
+:t #> 2drop hld @ pad over - ;t  ( w -- b u )
+:t #  
+   ( 2 lit ?depth )
+   0 lit base @  
+   ( extract ->) dup >r um/mod r> swap >r um/mod r> rot ( ud ud -- ud u )
+   digit hold ;t  ( d -- d )
+:t #s begin # 2dup d0= until ;t             ( d -- 0 )
+:t <# pad hld ! ;t                          ( -- )
 :t sign 0< 0= if exit then [char] - hold ;t ( n -- )
-:t (.) ( n -- b u : convert a signed integer to a numeric string )
-  dup >r abs 0 lit <# #s r> sign #> ;t
-:t (u.) 0 lit <# #s #> ;t             ( u -- b u : turn *u* into number string )
-:t u.r >r (u.) r> over - spaces type ;t ( u +n -- : print u right justified by +n)
-\ ( :  .r >r (.)( r> over - spaces type ;t      ( n n -- : print n, right justified by +n )
-:t u.  (u.) space type ;t  ( u -- : print unsigned number )
-:t  .  (.) space type ;t                  ( n -- print number )
+:t u.r >r 0 lit <# #s #>  r> over - spaces type ;t    ( u +n -- : print u right justified by +n )
+:t u.  0 lit <# #s #> space type ;t                   ( u -- : print unsigned number )
+:t  . dup >r abs 0 lit <# #s r> sign #> space type ;t ( n -- print number )
 :t digit? ( c base -- u f )
   >r [char] 0 - 9 lit over <
   if
@@ -852,8 +835,7 @@ assembler.1 -order
   then dup r> u< ;t
 :t >number ( ud b u -- ud b u : convert string to number )
   begin
-    ( get next character )
-    2dup 2>r drop c@ base @ digit?
+    2dup 2>r drop c@ base @ digit? ( get next character )
     0= if                                   ( d char )
       drop                                  ( d char -- d )
       2r>                                   ( restore string )
@@ -871,7 +853,7 @@ assembler.1 -order
   2>r 0 lit dup 2r>
   begin
     >number dup
-  while over c@ [char] .  ( fsp @ ) xor
+  while over c@ [char] . xor
     if rot drop rot r> 2drop 0 lit r> base ! exit then
     1- dpl ! 1+ dpl @
   repeat 2drop r> if dnegate then r> base ! -1 lit ;t
@@ -885,16 +867,13 @@ assembler.1 -order
     then
   next 2drop 0 lit ;t
 :t do$ 2r> 1 lit lls dup count + aligned 1 lit lrs >r swap >r ;t ( -- a )
-:t lit$ do$ ;t ( -- a : do string NB. )
+:t lit$ do$ ;t               ( -- a : do string NB. )
 :t .$ do$ count type ;t      ( -- : print string  )
-: ." .$ $literal ;
-: $" lit$ $literal ; \ "
-\ :t throw . [char] ? emit cr reset! ;t \ TODO: Implement correctly!
-:t .s depth for aft r@ pick . then  next ."  <sp" cr ;t
+:m ." .$ $literal ;m
+:m $" lit$ $literal ;m
+:t .s depth 1- for aft r@ pick . then  next ."  <sp" cr ;t
 :t nfa cell+ ;t
 :t cfa nfa dup c@ $1F lit and + cell+ 2 lit negate and ;t ( pwd -- cfa )
-:t immediate? nfa $40 lit swap @ and 0<> ;t ( pwd -- t : is word immediate? )
-:t compile-only? nfa $20 lit swap @ and 0<> ;t    ( pwd -- t : is word compile only? )
 :t (search-wordlist) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0: find word in WID )
   swap >r dup
   begin
@@ -903,16 +882,16 @@ assembler.1 -order
     dup nfa count $9F lit ( $1F:word-length + $80:hidden ) and r@ count compare 0=
     if ( found! )
       rdrop
-      dup immediate? 1 lit or negate exit
+      dup ( immediate? -> ) nfa $40 lit swap @ and 0<>
+      1 lit or negate exit
     then
     nip dup @
   repeat
   2drop 0 lit r> 0 lit ;t
 :t search-wordlist (search-wordlist) rot drop ;t
-:t (find) last (search-wordlist) ;t
-:t find (find) rot drop ;t
-:t literal =push lit , , ;t
-:t (literal) state @ 0= if exit then literal ;t
+:t find last search-wordlist ;t
+:t literal =push lit , , ;t immediate
+:t (literal) state @ 0= if exit then postpone literal ;t
 :t compile, 1 lit lrs align C000 lit or , ;t
 :t ?found 0= if space count type [char] ? emit cr -D lit throw then ;t ( u f -- )
 :t interpret
@@ -936,27 +915,26 @@ assembler.1 -order
     (literal) exit
   then
   r> 0 lit ?found \ Could vector ?found here, to handle arbitrary words
-  ;t 
+  ;t
 :t word ( 1depth ) parse ( ?length ) here pack$ ;t
-:t token bl word ;t
-:t ?depth drop ;t \ TODO: implement
-:t eval begin token dup c@ while interpret 0 lit ?depth repeat drop ok ;t
-:t prequit [ 0 lit >in ! ( sp0 sp! ) ;t
-:t ?error ?dup if space u. [char] ? emit then ;t
+:t eval begin bl word dup c@ while interpret 1 lit ?depth repeat drop ok ;t
+:t prequit postpone [ 0 lit >in ! 0 lit ;t
+:t ?error ?dup if space . [char] ? emit cr prequit then ;t
 :t quit prequit begin query t' eval lit catch ?error again ;t
 :t words last begin dup nfa count 1f lit and space type @ ?dup 0= until ;t
-:t ?nul dup c@ if exit then -A lit throw ;t
-:t ?unique ( dup find nip if ." redefined" cr then ) ;t
-:to see token find ?found begin dup @ =unnest lit <> while dup @ u. cell+ repeat @ u. ;t
-:to : align here last , {last} lit ! 
-    token ?nul ?unique count + h lit ! align 
-    =0iGET lit , =nest lit , ] ( 6666 lit ) ;t
-:to ; [ ( 6666 lit <> if -16 lit throw then ) =unnest lit , ;t immediate
+:to see bl word find ?found
+    cr begin dup @ =unnest lit <> while dup @ u. cell+ repeat @ u. ;t
+:to : align here last , {last} lit !
+    bl word 
+    dup c@ 0= if -A lit throw then
+    count + h lit ! align
+    =0iGET lit , =nest lit , ]  666 lit  ;t
+:to ; postpone [ 666 lit <> if -16 lit throw then  =unnest lit , ;t immediate
 :to begin align here ;t immediate compile-only
 :to until align =jumpz lit , 1 lit lrs , ;t immediate compile-only
 :to again align =jump  lit , 1 lit lrs , ;t immediate compile-only
 :to if align =jumpz lit , here 0 lit , ;t immediate compile-only
-:t skip =jump lit , 0 lit , ;t
+\ :t skip =jump lit , 0 lit , ;t
 \ :to else skip swap topost then ;t immediate compile-only
 :to then here 1 lit lrs swap ! ;t immediate compile-only
 :to for align =>r lit , here ;t immediate compile-only
@@ -965,10 +943,10 @@ assembler.1 -order
 \ :to while if ;t
 \ :to repeat swap again then ;t
 \ :to next talign opNext 2/ t, ;t
-:to ' token find ?found cfa state @ if (literal) then ;t immediate
-\ :t compile r> dup @ , cell+ >r ;t compile-only
-\ :to ." compile .$ [char] " word count + h lit ! align ;t immediate compile-only
-\ :to $" compile lit$ [char] " word count + h lit ! align ;t immediate compile-only  \ "
+:to ' bl word find ?found cfa state @ if (literal) then ;t immediate
+:t compile r> dup 1 lit lls @ , 1+ >r ;t compile-only
+:to ." compile .$ [char] " word count + h lit ! align ;t immediate compile-only
+:to $" compile lit$ [char] " word count + h lit ! align ;t immediate compile-only  \ "
 :to ( [char] ) parse 2drop ;t immediate ( "comment" -- discard until parenthesis )
 :to \ source drop @ >in ! ;t immediate  ( "comment" -- discard until end of line )
 :to immediate last nfa @ $40 lit or last nfa ! ;t
@@ -977,18 +955,14 @@ assembler.1 -order
 		dup
 	while
 		dup F lit and 0= if cr then
-		over c@ 
+		over c@
 		2 lit u.r
 		space
 		+string
 	repeat 2drop cr ;t
-\ TODO: Make a VHDL simulation only program?
-:t cold \ Actual Program Entry Point
-	there 2/ <cold> t!
-	hex
-	cr
-	." eForth v1.0.0" here u. cr
-	ok quit halt ;t
+:t cold 
+	there 2/ <cold> t! \ program entry point set here
+	hex ." eForth v1.1.0" ok quit bye ;t
 
 there h t!
 atlast {last} t!

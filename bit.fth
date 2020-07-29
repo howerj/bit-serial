@@ -98,8 +98,7 @@ size =cell - tep !
 :m immediate    tlast @ tnfa t@ $40 or tlast @ tnfa t! ;m ( -- )
 :m t' ' >body @ ;m
 :m call 2/ C000 or ;
-\ TODO Place these in an assembler vocabulary, and drop the 'a' prefix
-
+\ Place these in an assembler vocabulary, and drop the 'a' prefix?
 \ assembler.1 +order 
 
 : iOR      0000 or t, ;
@@ -194,7 +193,6 @@ label: TERMBUF
 400 tvar rx-re-mask
 FF  tvar low-byte-mask
 
-\ TODO: add to assembler vocabulary
 : fdefault flgInd iLITERAL flags! ;
 : vcell 1 ( cell '1' should contain '1' ) ;
 : -vcell set 2/ ;
@@ -654,7 +652,6 @@ assembler.1 -order
 :to sp@ sp@ ;t
 :to rp@ rp@ ;t
 :to execute execute ;t
-\ TODO: Create special variables for these.
 :t here h lit @ ;t
 :t sp0 {sp0} lit @ ;t
 :t rp0 {rp0} lit @ ;t
@@ -794,6 +791,7 @@ assembler.1 -order
       if r> 1+ exit then
     then
   next 0 lit ;t
+\ This could use refactoring so it nothing is hidden.
 :ht lookfor ( b u c xt -- b u : skip until *xt* test succeeds )
   swap >r -rot
   begin
@@ -962,7 +960,7 @@ assembler.1 -order
 	repeat 2drop cr ;t
 :t cold 
 	there 2/ <cold> t! \ program entry point set here
-	hex ." eForth v1.1.0" ok quit bye ;t
+	hex ." eForth v1.1.1" ok quit bye ;t
 
 there h t!
 atlast {last} t!

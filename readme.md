@@ -26,7 +26,15 @@ To build and run the C based simulator for the project, you will need a C
 compiler and 'make'. To build and run the [VHDL][] simulator, you will need [GHDL][]
 installed.
 
-The cross compiler requires [gforth][].
+The cross compiler requires [gforth][], although a pre-compiled image is
+provided in case you do not have access to it, called '[bit.hex][]', this hex file
+contains a working [Forth][] image. To run this:
+
+	make bit
+	./bit bit.conf bit.hex
+
+You should be greeted by a [Forth][] prompt, type 'words' and hit a carriage
+return to get a list of defined functions.
 
 The target [FPGA][] that the system is built for is a [Spartan-6][], for a
 [Nexys 3][] development board. [Xilinx ISE 14.7][] was used to build the
@@ -45,7 +53,7 @@ readable by the simulator.
 This target builds the C based simulator, assembles the test program
 and runs the simulator on the assembled program.
 
-	make simulation synthesis implementation bitfile
+	make synthesis implementation bitfile
 
 This builds the project for the [FPGA][].
 
@@ -77,6 +85,32 @@ In short, the project may be useful if:
 * You have spare memory for the program and storage.
 * You need a programmable CPU that supports a reasonable instruction set.
 * *Execution speed is not a concern*.
+
+There were two use cases that the author had in mind when setting out to build
+this system:
+
+* As a CPU driving a low-baud UART
+* As a controller for a VT100 terminal emulator that would control cursor
+  position and parse escape codes, setting colors and attributes in a hardware
+  based text-terminal (this was to replace an existing VHDL only system that
+  had spare capacity in the FPGAs dual-port block RAMs used to store the Font
+  and text).
+
+# Tool-chain
+
+The tool-chain consists of a cross compiler written in Forth, it itself
+implements a virtual machine on top of which a Forth interpreter is written.
+The accumulator machine lacks call/returns, and a stack, so these have to be
+implemented. The meta-compiler (a Forth specific term for what is a
+more widely known as a cross-compiler) is available in [bit.fth][].
+
+As the instruction set is anemic and CPU features lacking it is best to target
+the virtual machine and program in Forth than it is to program in assembly.
+
+Despite the inherently slow speed of the design and the further slow down
+executing code on top of a virtual machine the interpreter is plenty fast 
+enough for interactive use, slowing down noticeably when division has to be
+performed.
 
 # CPU Specification
 
@@ -327,59 +361,6 @@ It can address less memory (1K) without bank-switching. There is also a
 different version made with 7400 series logic gates
 <https://www.bigmessowires.com/nibbler/>.
 
-# Project Goals
-
-* [x] Map out a viable instruction set
-* [x] Make a toolchain for the system
-* [x] Make a simulator for the system
-* [x] Implement the system on an FPGA
-  * [x] Implement the CPU
-  * [x] Implement a memory and peripheral interface
-  * [ ] Add a counter/timer peripheral
-  * [ ] Make peripherals optional
-* [x] Create a tiny test program
-* [x] Verify program works in hardware
-* [ ] Implement a tiny Forth on the CPU
-  * [x] Implement stack based virtual machine
-  * [x] Implement basic words
-  * [ ] Implement REPL
-  * [ ] Create a unit test framework to test each word on target
-* [ ] Use in other VHDL projects
-  * [ ] As a low speed UART (Bit-Banged)
-  * [ ] As a VT100 interface for a VGA Text Terminal in a CGA graphics card
-
-# Notes
-
-* The documentation contains a state-machine diagram, a timing diagram,
-  instruction set listing, and register map. A block diagram explaining
-  the CPU in more detail using higher level blocks (like shift-registers,
-  adders, gates, flip flops) would help in analyzing and understanding the
-  CPU architecture).
-* Two of these cores could be hooked up to one Dual Port block RAM. This is
-  another intention and goal of the device, this allows one FPGA based
-  application (say a text terminal) to share memory with one BCPU core.
-* A bit-parallel (or...a normal) version of this CPU could be made if software
-  compatibility is desired but the design proves to be too slow, this would of
-  course be bigger, and some instructions may be difficult to implement (the
-  shift/rotates).
-* Variable cycle states should have been used, FETCH could be 4/5 cycles,
-  INDIRECT could be 12/13 cycles, OPERAND could be merged with EXECUTE, and
-  EXECUTE 16/17 along with the other instructions.
-* The CPU could be simplified further if we are willing to use self-modifying
-  code, this could be done by removing the indirection options, this would
-  make programming the CPU *much* more difficult without the correct tool-chain
-  support.
-* There are alternative CPU designs and instructions sets that might result
-  in a CPU that is the same size but be easier to program; these include a
-  nibble-oriented CPU (4 instructions packed into a 16-bit word), a stack
-  machine, an instruction set in which a single bit is reserved for indirection
-  (limiting the current design to only 8-instructions), a CPU with two
-  registers as opposed to just one, or even a CPU that whilst difficult to
-  program in itself easily lends itself to abstractions. All these things
-  are for different projects however. We could remove some instructions from
-  the current set if we can map the registers into memory space like the I/O
-  is.
-
 # References / Appendix
 
 The state-machine diagram was made using [Graphviz][], and can be viewed and
@@ -501,26 +482,28 @@ For timing diagrams, use [Wavedrom][] with the following text:
 
 That's all folks!
 
-[gforth]: https://www.gnu.org/software/gforth/
-[H2]: https://github.com/howerj/forth-cpu
-[Soft-Core]: https://en.wikipedia.org/wiki/Soft_microprocessor#Core_comparison
-[bit-serial CPU]: https://en.wikipedia.org/wiki/Bit-serial_architecture
-[VHDL]: https://en.wikipedia.org/wiki/VHDL
-[GHDL]: http://ghdl.free.fr/
-[Graphviz]: https://graphviz.org/
-[GraphvizOnline]: https://dreampuf.github.io/GraphvizOnline
-[bit.vhd]: bit.vhd
-[bit.c]: bit.c
-[FPGA]: https://en.wikipedia.org/wiki/Field-programmable_gate_array
-[Wavedrom]: https://wavedrom.com/editor.html
-[Cool ASCII Text]: http://www.patorjk.com/software/taag
-[Xilinx ISE 14.7]: https://www.xilinx.com/products/design-tools/ise-design-suite/ise-webpack.html
-[Nexys 3]: https://store.digilentinc.com/nexys-3-spartan-6-fpga-trainer-board-limited-time-see-nexys4-ddr/
-[Spartan-6]: https://www.xilinx.com/products/silicon-devices/fpga/spartan-6.html
-[bit.fth]: bit.fth
-[Digilent]: https://store.digilentinc.com/
-[r8086.zip]: r8086.zip
 [C]: https://en.wikipedia.org/wiki/C_%28programming_language%29
+[Cool ASCII Text]: http://www.patorjk.com/software/taag
+[Digilent]: https://store.digilentinc.com/
+[FPGA]: https://en.wikipedia.org/wiki/Field-programmable_gate_array
+[Forth]: https://www.forth.com/forth/
+[GHDL]: http://ghdl.free.fr/
+[GraphvizOnline]: https://dreampuf.github.io/GraphvizOnline
+[Graphviz]: https://graphviz.org/
+[H2]: https://github.com/howerj/forth-cpu
+[Nexys 3]: https://store.digilentinc.com/nexys-3-spartan-6-fpga-trainer-board-limited-time-see-nexys4-ddr/
+[Soft-Core]: https://en.wikipedia.org/wiki/Soft_microprocessor#Core_comparison
+[Spartan-6]: https://www.xilinx.com/products/silicon-devices/fpga/spartan-6.html
+[VHDL]: https://en.wikipedia.org/wiki/VHDL
+[Wavedrom]: https://wavedrom.com/editor.html
+[Xilinx ISE 14.7]: https://www.xilinx.com/products/design-tools/ise-design-suite/ise-webpack.html
+[bit-serial CPU]: https://en.wikipedia.org/wiki/Bit-serial_architecture
+[bit.c]: bit.c
+[bit.fth]: bit.fth
+[bit.fth]: bit.fth
+[bit.hex]: bit.hex
+[bit.vhd]: bit.vhd
+[gforth]: https://gforth.org/
 
 <style type="text/css">
 	body{

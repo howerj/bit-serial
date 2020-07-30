@@ -56,7 +56,6 @@ architecture rtl of bcpu is
 		choice: state_t;    -- computed next state
 		first:  boolean;    -- First flag, for setting up an instruction
 		last4:  boolean;    -- Are we processing the last 4 bits of the instruction?
-		is_io:  boolean;    -- is get/set an I/O operation?
 		indir:  boolean;    -- does the instruction require indirection of the operand?
 		tcarry: std_ulogic; -- temporary carry flag
 		dline:  std_ulogic_vector(N - 1 downto 0); -- delay line, 16 cycles, our timer
@@ -72,7 +71,6 @@ architecture rtl of bcpu is
 		choice => RESET,
 		first  => true,
 		last4  => false,
-		is_io  => false,
 		indir  => false,
 		tcarry => 'X',
 		dline  => (others => '0'),
@@ -309,15 +307,6 @@ begin
 				end if;
 			end if;
 
-			-- We use the highest operand bit to determine whether an I/O operation
-			-- is taking place with iGET and iSET. This is set for other instructions,
-			-- however it is not actually used for them.
-			if c.op(c.op'high - 3) = '1' then
-				f.is_io <= true after delay;
-			else
-				f.is_io <= false after delay;
-			end if;
-
 			f.flags(Ng)  <= c.acc(0) after delay; -- contains highest bit when 'last' is true
 
 			-- NB. 'f.choice' may be overwritten for INDIRECT.
@@ -450,7 +439,7 @@ begin
 				--
 				-- However, this instruction may not have its indirection bit set,
 				-- This would not be a problem for the swap instruction. Alternatively
-				-- and 'add-constant' could be added.
+				-- an 'add-constant' could be added.
 				--
 				when iJUMP =>
 					ae       <=     '1' after delay;
@@ -471,42 +460,22 @@ begin
 				-- up another two instructions, and potentially simplify the CPU.
 				--
 				when iSET =>
-					if c.is_io then
-						ae     <=     '1' after delay;
-						a      <= c.op(0) after delay;
-						if last = '1' then
-							a <= '1' after delay;
-						end if;
-						f.op     <=   "0" & c.op(c.op'high downto 1) after delay;
-						f.choice <= STORE after delay;
+					if c.op(0) = '0' then
+						-- NB. We could set the address directly here and
+						-- go to FETCH but that costs us too much time and gates.
+						f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
+						f.tcarry  <= '0' after delay;
 					else
-						if c.op(0) = '0' then
-							-- NB. We could set the address directly here and
-							-- go to FETCH but that costs us too much time and gates.
-							f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
-							f.tcarry  <= '0' after delay;
-						else
-							f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
-						end if;
-						f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
+						f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
 					end if;
+					f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 				when iGET =>
-					if c.is_io then
-						ae     <=     '1' after delay;
-						a      <= c.op(0) after delay;
-						if last = '1' then
-							a <= '1' after delay;
-						end if;
-						f.op     <= "0" & c.op(c.op'high downto 1) after delay;
-						f.choice <= LOAD after delay;
+					if c.op(0) = '0' then
+						f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
+						f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1)   after delay;
 					else
-						if c.op(0) = '0' then
-							f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
-							f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1)   after delay;
-						else
-							f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1)     after delay;
-							f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
-						end if;
+						f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1)     after delay;
+						f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
 					end if;
 				end case;
 			end if;

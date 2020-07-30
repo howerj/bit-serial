@@ -46,16 +46,19 @@ static inline void binary(FILE *f) { UNUSED(f); }
 #include <unistd.h>
 #include <termios.h>
 static int getch(void) {
+	const int fd = STDIN_FILENO;
 	struct termios oldattr, newattr;
-	if (tcgetattr(STDIN_FILENO, &oldattr) < 0) /* Use 'fileno(b->in)'? */
+	if (!isatty(fd))
+		return fgetc(stdin);
+	if (tcgetattr(fd, &oldattr) < 0) /* Use 'fileno(b->in)'? */
 		return -2;
 	newattr = oldattr;
 	newattr.c_iflag &= ~(ICRNL);
 	newattr.c_lflag &= ~(ICANON | ECHO);
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &newattr) < 0)
+	if (tcsetattr(fd, TCSANOW, &newattr) < 0)
 		return -2;
 	const int ch = getchar();
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &oldattr) < 0)
+	if (tcsetattr(fd, TCSANOW, &oldattr) < 0)
 		return -2;
 	return ch;
 }
@@ -81,7 +84,7 @@ static int wrap_getch(bcpu_t *b) {
 	if (b->in != stdin)
 		return fgetc(b->in);
 	const int ch = getch();
-	if (ch == ESCAPE)
+	if ((ch == ESCAPE) || (ch < 0)/* <- remove for non-blocking I/O */)
 		b->done = 1;
 	return ch == DELETE ? BACKSPACE : ch;
 }
@@ -256,13 +259,13 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 		const int rot    = !!(flg & (1u << fROT));
-		if (flg & (1u << fHLT)) { /* HALT */
+		if (flg & (1u << fHLT)) {
 			if (debug(b, "{HALT}") < 0)
 				r = -1;
 			goto halt;
 		}
 
-		if (flg & (1u << fR)) { /* RESET */
+		if (flg & (1u << fR)) {
 			if (debug(b, "{RESET}") < 0) {
 				r = -1;
 				goto halt;
@@ -287,31 +290,25 @@ static int bcpu(bcpu_t *b, const unsigned cycles, const int forever) {
 		}
 		pc++;
 		switch (cmd) {
-		case 0x0: acc |= lop;                            break; /* OR      */
-		case 0x1: acc &= ((loadit ? 0: 0xF000) | lop);   break; /* AND     */
-		case 0x2: acc ^= lop;                            break; /* XOR     */
-		case 0x3: acc = add(acc, lop, &flg);             break; /* ADD     */
+		case 0x0: acc |= lop;                                 break; /* OR      */
+		case 0x1: acc &= ((loadit ? 0: 0xF000) | lop);        break; /* AND     */
+		case 0x2: acc ^= lop;                                 break; /* XOR     */
+		case 0x3: acc = add(acc, lop, &flg);                  break; /* ADD     */
 
-		case 0x4: acc = shiftl(rot, acc, bits(lop));     break; /* LSHIFT  */
-		case 0x5: acc = shiftr(rot, acc, bits(lop));     break; /* RSHIFT  */
-		case 0x6: acc = bload(b, lop);                   break; /* LOAD    */
-		case 0x7: bstore(b, lop, acc);                   break; /* STORE   */
+		case 0x4: acc = shiftl(rot, acc, bits(lop));          break; /* LSHIFT  */
+		case 0x5: acc = shiftr(rot, acc, bits(lop));          break; /* RSHIFT  */
+		case 0x6: acc = bload(b, lop);                        break; /* LOAD    */
+		case 0x7: bstore(b, lop, acc);                        break; /* STORE   */
 
-		case 0x8: acc = bload(b, op1);                   break; /* LOAD-C  */
-		case 0x9: bstore(b, op1, acc);                   break; /* STORE-C  */
-		case 0xA: acc = op1;                             break; /* LITERAL */
-		case 0xB:                                        break; /* UNUSED  */
+		case 0x8: acc = bload(b, op1);                        break; /* LOAD-C  */
+		case 0x9: bstore(b, op1, acc);                        break; /* STORE-C */
+		case 0xA: acc = op1;                                  break; /* LITERAL */
+		case 0xB:                                             break; /* UNUSED  */
 
-		case 0xC: pc = op1;                              break; /* JUMP    */
-		case 0xD: if (!acc) pc = op1;                    break; /* JUMPZ   */
-		case 0xE:                                               /* SET     */
-			if (op1 & 0x0800) { bstore(b, 0x8000u | op1, acc); }
-			else { if (op1 & 1) flg = acc; else pc = acc; }
-			break;
-		case 0xF:                                               /* GET */
-			if (op1 & 0x0800) { acc = bload(b, 0x8000u | op1); }
-			else { if (op1 & 1) acc = flg; else acc = pc - 1u; }
-			break;
+		case 0xC: pc = op1;                                   break; /* JUMP    */
+		case 0xD: if (!acc) pc = op1;                         break; /* JUMPZ   */
+		case 0xE: if (op1 & 1) flg = acc; else pc = acc;      break; /* SET     */
+		case 0xF: if (op1 & 1) acc = flg; else acc = pc - 1u; break; /* GET     */
 		default: r = -1; goto halt;
 		}
 

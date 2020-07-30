@@ -151,10 +151,8 @@ The instructions are:
 	| UNUSED      | N/A                                    | Unused instruction                | 3*(N+1)          |
 	| JUMP        | pc = op                                | Unconditional Jump                | 2*(N+1)          |
 	| JUMPZ       | if(!acc){pc = op }                     | Jump If Zero                      | [2 or 3]*(N+1)   |
-	| SET         | if(op&0x800) { io(op|0x8000) = acc   } | Set I/O or Register               | [3 or 4]*(N+1)   |
-	|             | else { if(op&1){flg=acc}else{pc=acc} } |                                   |                  |
-	| GET         | if(op&0x800) { acc = io(op|0x8000)   } | Get I/O or Register               | [3 or 4]*(N+1)   |
-	|             | else { if(op&1){acc=flg}else{acc=pc} } |                                   |                  |
+	| SET         | if(op&1){flg=acc}else{pc=acc}          | Set Register                      | 3*(N+1)          |
+	| GET         | if(op&1){acc=flg}else{acc=pc}          | Get Register                      | 3*(N+1)          |
 	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
 
 * pc    = program counter
@@ -165,10 +163,6 @@ The instructions are:
 * op    = instruction operand
 * flg   = flags register
 * N     = bit width, which is 16.
-
-The GET/SET instructions can be used to perform I/O, and is also used to get/set
-some of the registers (program counter and flag register). These are the most
-complicated instructions.
 
 Notice that the when the indirect flag is *not* set that the top bits will be
 anded with '0xF' and not '0x0'.
@@ -229,20 +223,16 @@ peripherals could be added as needed.
 ## Register Map
 
 The I/O register map for the device is very small as there are very few
-peripherals. Note that the addresses are of the form '0x88XX', this is the
-address seen on the address bus, you only need to write to the address '0x08XX'
-using the GET/SET instructions, which will set the top bit automatically. This
-is done so that the LOAD/STORE instructions can use the full range of their
-operand for memory operations.
+peripherals. 
 
 	| ------- | -------------- |
 	| Address | Name           |
 	| ------- | -------------- |
-	| 0x8800  | LED/Switches   |
-	| 0x8801  | UART TX/RX     |
-	| 0x8802  | UART Clock TX  |
-	| 0x8803  | UART Clock RX  |
-	| 0x8804  | UART Control   |
+	| 0x8000  | LED/Switches   |
+	| 0x8001  | UART TX/RX     |
+	| 0x8002  | UART Clock TX  |
+	| 0x8003  | UART Clock RX  |
+	| 0x8004  | UART Control   |
 	| ------- | -------------- |
 
 * LED/Switches
@@ -388,6 +378,7 @@ edited immediately by copying the following text into [GraphvizOnline][].
 
 For timing diagrams, use [Wavedrom][] with the following text:
 
+
 	{signal: [
 	  {name: 'clk',   wave: 'pp...p...p...p...p..'},
 	  {name: 'cycle', wave: '22222222222222222222', data: ['prev', 'init','0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', 'next', 'rest']},
@@ -483,7 +474,6 @@ For timing diagrams, use [Wavedrom][] with the following text:
 That's all folks!
 
 [C]: https://en.wikipedia.org/wiki/C_%28programming_language%29
-[Cool ASCII Text]: http://www.patorjk.com/software/taag
 [Digilent]: https://store.digilentinc.com/
 [FPGA]: https://en.wikipedia.org/wiki/Field-programmable_gate_array
 [Forth]: https://www.forth.com/forth/

@@ -108,7 +108,7 @@ As the instruction set is anemic and CPU features lacking it is best to target
 the virtual machine and program in Forth than it is to program in assembly.
 
 Despite the inherently slow speed of the design and the further slow down
-executing code on top of a virtual machine the interpreter is plenty fast 
+executing code on top of a virtual machine the interpreter is plenty fast
 enough for interactive use, slowing down noticeably when division has to be
 performed.
 
@@ -223,7 +223,7 @@ peripherals could be added as needed.
 ## Register Map
 
 The I/O register map for the device is very small as there are very few
-peripherals. 
+peripherals.
 
 	| ------- | -------------- |
 	| Address | Name           |

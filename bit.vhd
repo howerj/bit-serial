@@ -118,7 +118,7 @@ architecture rtl of bcpu is
 
 		function hx(slv: in std_ulogic_vector) return string is -- std_ulogic_vector to hex string
 			constant cv: string := "0123456789ABCDEF";
-			constant qu: integer := slv'length  /  4;
+			constant qu: integer := slv'length   / 4;
 			constant rm: integer := slv'length mod 4;
 			variable rs: string(1 to qu);
 			variable sl: std_ulogic_vector(3 downto 0);
@@ -261,7 +261,6 @@ begin
 		-- Of note: we could make the FETCH state last only 4 + 1 cycles
 		-- and merge the operand fetching in FETCH (and OPERAND state) into
 		-- the 'EXECUTE' state.
-		--
 		case c.state is
 		when RESET   =>
 			f.choice <= FETCH;
@@ -505,13 +504,6 @@ begin
 		-- this state *is* reached when we do a iJUMP, iJUMPZ or an iSET on the
 		-- program counter, those instructions clear the 'tcarry', which is
 		-- normally '1'.
-		--
-		-- Just an aside, apparently some historical computers used a
-		-- Linear Feed Back Shift Register instead of an adder to advance
-		-- the program counter, the tool-chain accounting for the non-sequential
-		-- jumps. They did this to save on a few gates. We will not save
-		-- anything in this design by doing that (and it would be a massive
-		-- pain to account for and debug).
 		when ADVANCE =>
 			f.choice <= FETCH after delay;
 			if c.first then

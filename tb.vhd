@@ -35,12 +35,12 @@ architecture testing of tb is
 		variable in_line: line;
 		variable i:       integer;
 	begin
-		if endfile(in_file) then return false; end if; 
-		readline(in_file, in_line); read(in_line, i); 
+		if endfile(in_file) then return false; end if;
+		readline(in_file, in_line); read(in_line, i);
 		clocks := i;
-		readline(in_file, in_line); read(in_line, i); 
+		readline(in_file, in_line); read(in_line, i);
 		forever := i;
-		readline(in_file, in_line); read(in_line, i); 
+		readline(in_file, in_line); read(in_line, i);
 		debug := i;
 		return true;
 	end function;
@@ -55,12 +55,12 @@ begin
 			baud       => baud,
 			debug      => debug)
 		port map (
-			clk  => clk, 
---			rst  => rst, 
+			clk  => clk,
+--			rst  => rst,
 			halt => halt,
 			ld   => ld,
 			sw   => sw,
-			tx   => tx, 
+			tx   => tx,
 			rx   => rx);
 
 	clock_process: process
@@ -84,7 +84,7 @@ begin
 		else
 			write(ll, string'("{CYCLES}"));
 		end if;
-	
+
 		if debug > 0 then
 			writeline(OUTPUT, ll);
 		end if;

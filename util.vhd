@@ -126,8 +126,8 @@ use ieee.numeric_std.all;
 use work.util.common_generics;
 
 entity fifo is
-	generic (g: common_generics; 
-		data_width: positive; 
+	generic (g: common_generics;
+		data_width: positive;
 		fifo_depth: positive;
 		read_first: boolean := true);
 	port (

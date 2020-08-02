@@ -1,5 +1,5 @@
 # Richard James Howe
-# TCL Script for GTKWave on tb.ghw 
+# TCL Script for GTKWave on tb.ghw
 #
 
 set bits 15
@@ -10,9 +10,9 @@ gtkwave::/View/Show_Filled_High_Values 1
 gtkwave::setFromEntry 170ns
 
 # top.tb.uut.cpu.c.first
-set names { 
-	top.tb.rst 
-	top.tb.clk 
+set names {
+	top.tb.rst
+	top.tb.clk
 	top.tb.uut.cpu.last
 	top.tb.uut.cpu.c.state
 	top.tb.uut.cpu.c.pc[15:0]

@@ -51,7 +51,7 @@ begin
 			o => i,
 			a => a, oe => ie, ie => oe, ae => ae);
 
-	cpu: entity work.bcpu 
+	cpu: entity work.bcpu
 		generic map (
 			asynchronous_reset => g.asynchronous_reset,
 			delay              => g.delay,
@@ -62,6 +62,6 @@ begin
 			-- synthesis translate_off
 			stop => halt,
 			-- synthesis translate_on
-			i => i, 
+			i => i,
 			o => o, a => a, oe => oe, ie => ie, ae => ae);
 end architecture;

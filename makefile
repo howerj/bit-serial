@@ -9,11 +9,8 @@ DIFF?=vimdiff
 
 all: bit simulation
 
-run c.log out.hex: bit bit.hex bit.conf
-	./bit bit.conf bit.hex out.hex 2> c.log
-
-diff: c.log vhdl.log
-	${DIFF} c.log vhdl.log
+run: bit bit.hex
+	./bit bit.hex
 
 talk:
 	picocom --omap delbs -e b -b ${BAUD} ${USB}

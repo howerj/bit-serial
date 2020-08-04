@@ -308,7 +308,7 @@ a: opNext
 	if
 		set 2/ iADD
 		{rp} iSTORE
-		fdefault
+		( 'fdefault' handled in 'vm' )
 		ip iLOAD
 		ip iSTORE-C
 	else
@@ -373,12 +373,6 @@ a: xor ( u u -- u : bit wise XOR )
 	--sp
 	a;
 
-a: invert ( u -- u : bit wise inversion )
-	tos iLOAD-C
-	set 2/ iXOR
-	tos iSTORE-C
-	a;
-
 a: + ( u u -- u : Plain old addition )
 	{sp} iLOAD
 	tos 2/ iADD
@@ -394,7 +388,7 @@ a: um+ ( u u -- u f : Add with carry )
 	flags?
 	flgCy iAND
 	tos iSTORE-C
-	fdefault a;
+	( 'fdefault' handled in 'vm' ) a;
 
 a: @ ( a -- u : load a memory address )
 	tos iLOAD-C
@@ -475,12 +469,6 @@ a: over ( u1 u2 -- u1 u2 u1 : reach over top of stack and copy next on stack )
 	tos iLOAD-C
 	{sp} iSTORE
 	w iLOAD-C
-	tos iSTORE-C
-	a;
-
-a: 1+ ( u -- u : increment top of stack by one )
-	tos iLOAD-C
-	1 iADD
 	tos iSTORE-C
 	a;
 
@@ -596,7 +584,6 @@ assembler.1 -order
 :to and and ;t
 :to or or ;t
 :to xor xor ;t
-:to invert invert ;t
 :to + + ;t
 :to um+ um+ ;t
 :to @ @ ;t
@@ -608,7 +595,6 @@ assembler.1 -order
 :to drop drop ;t
 :to swap swap ;t
 :to over over ;t
-:to 1+ 1+ ;t
 :to 1- 1- ;t
 :to >r r> swap >r >r ;t compile-only
 :to r> r> r> swap >r ;t compile-only
@@ -616,6 +602,8 @@ assembler.1 -order
 :to 0= 0= ;t 
 :to execute execute ;t 
  
+:t invert #-1 xor ;t
+:t 1+ #1 + ;t
 :t emit ( ch -- :  )
    begin 8001 lit io@ 1000 lit and 0= until
    FF lit and 2000 lit or 8001 lit io! ;t
@@ -644,7 +632,6 @@ assembler.1 -order
 :t +! tuck @ + swap ! ;t     ( n a -- : increment value at address by 'n' )
 :t = xor 0= ;t               ( u u -- f : equality )
 :t <> = 0= ;t                ( u u -- f : inequality )
-:t 0<> 0= 0= ;t              ( u -- f : not equal to zero )
 :t 0>= 8000 lit and 0= ;t    ( n -- f : greater or equal to zero )
 :t 0< 8000 lit and 0= 0= ;t  ( n -- f : less than zero )
 :t negate 1- invert ;t       ( n -- n : negate [twos compliment] )
@@ -668,11 +655,10 @@ assembler.1 -order
     dup >r @ FF00 lit and swap FF lit and
   then or r> ! ;t
 :t count dup 1+ swap c@ ;t ( b -- b c : advance string, get next char )
-:t , align here dup cell+ h lit ! ! ;t  ( u -- : write a value into the dictionary )
 :t allot aligned h lit +! ;t            ( u -- : allocate space in dictionary )
+:t , align here ! cell allot ;t         ( u -- : write a value into the dictionary )
 :t dnegate invert >r invert #1 um+ r> + ;t ( d -- -d : negate a double cell )
-:t d+ >r swap >r um+ r> + r> + ;t       ( d d -- d : add two double cell numbers )
-:t abs dup 0< if negate then exit ;t    ( n -- u : absolute value of a number )
+:t abs dup 0< if negate then ;t         ( n -- u : absolute value of a number )
 :t max 2dup > if drop exit then nip ;t  ( n n -- n : maximum of two numbers )
 :t min 2dup < if drop exit then nip ;t  ( n n -- n : minimum of two numbers )
 :t +string #1 over min rot over + rot rot - ;t ( b u -- b u : increment str )
@@ -725,7 +711,6 @@ assembler.1 -order
 :m $" ($) $literal ;m
 :t space bl emit ;t               ( -- : print space )
 :t cr .$ 2 tc, =cr tc, =lf tc, ;t ( -- : print new line )
-:t ok ."  ok" cr ;t               ( -- : print okay prompt )
 :t tap dup emit over c! 1+ ;t     ( bot eot cur c -- bot eot cur )
 :t ktap ( bot eot cur c -- bot eot cur )
 	dup =cr lit xor if
@@ -764,7 +749,7 @@ assembler.1 -order
     if rdrop rot drop exit then
     +string
   repeat rdrop rot drop ;t
-:ht no-match if 0> exit then 0<> ;t ( n f -- t )
+:ht no-match if 0> exit then 0= 0= ;t ( n f -- t )
 :ht match no-match invert ;t        ( n f -- t )
 :ht (parse)                         ( b u c -- b u delta )
    >r over r> swap >r >r
@@ -802,7 +787,7 @@ assembler.1 -order
       r> r>                          ( restore string )
       exit                           ( ..exit )
     then                             ( d char )
-    swap base @ * rot base @ um* d+  ( accumulate digit )
+    swap base @ * rot base @ um* ( d+ -> ) >r swap >r um+ r> + r> + ( accumulate digit )
     r> r>                            ( restore string )
     +string dup 0=                   ( advance string and test for end )
   until ;t
@@ -827,10 +812,10 @@ assembler.1 -order
       if rdrop nip nip exit then
     then
   next 2drop #0 ;t
-:t .s depth 1- for aft r@ pick . then next cr ;t ( -- : print variable stack )
+:t .s depth 1- for aft r@ pick . then next ;t ( -- : print variable stack )
 :t nfa cell+ ;t ( pwd -- nfa : move word pointer to name field )
 :t cfa nfa dup c@ $1F lit and + cell+ 2 lit negate and ;t ( pwd -- cfa )
-:t (search-wordlist) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0: find word in WID )
+:t (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0: find word in WID )
   swap >r dup
   begin
     dup
@@ -838,13 +823,13 @@ assembler.1 -order
     dup nfa count $9F lit ( $1F:word-length + $80:hidden ) and r@ count compare 0=
     if ( found! )
       rdrop
-      dup ( immediate? -> ) nfa $40 lit swap @ and 0<>
+      dup ( immediate? -> ) nfa $40 lit swap @ and 0= 0=
       #1 or negate exit
     then
     nip dup @
   repeat
   2drop #0 r> #0 ;t
-:t find last (search-wordlist) rot drop ;t            ( "name" -- b )
+:t find last (find) rot drop ;t  ( "name" -- b )
 :t literal state @ if =push lit , , then ;t immediate ( u -- )
 :t compile, 2/ align C000 lit or , ;t                 ( xt -- )
 :t ?found 0= if space count type [char] ? emit cr -D lit throw then ;t ( u f -- )
@@ -872,15 +857,7 @@ assembler.1 -order
   r> #0 ?found \ Could vector ?found here, to handle arbitrary words
   ;t
 :t word ( 1depth ) parse ( ?length ) here pack$ ;t ( c -- b )
-:t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ok ;t ( -- )
-:t prequit postpone [ #0 >in ! #0 ;t ( -- )
-:t quit ( -- )
-   prequit
-   begin
-     query t' eval lit catch
-     ( ?error -> ) ?dup if
-       space . [char] ? emit cr prequit
-     then again ;t
+:t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( -- )
 :to words last begin dup nfa count 1f lit and space type @ ?dup 0= until ;t
 :to see bl word find ?found
     cr begin dup @ =unnest lit <> while dup @ u. cell+ repeat @ u. ;t
@@ -915,9 +892,16 @@ assembler.1 -order
 		space
 		+string
 	repeat 2drop cr ;t
-:t cold ( -- : the entry point! )
-	there t2/ <cold> t! \ program entry point set here
-	hex ." eForth v2.0.1" ok quit bye ;t
+:t prequit hex postpone [ #0 >in ! #0 ;t ( -- )
+:t quit ( -- )
+   there t2/ <cold> t! \ program entry point set here
+   \ ." eForth v2.1.0"
+   prequit
+   begin
+     query t' eval lit catch
+     ( ?error -> ) ?dup if
+       space . [char] ? emit cr prequit
+     then again ;t
 
 \ ---- ---- ---- ---- ---- implementation finished ---- ---- ---- ---- ----
 

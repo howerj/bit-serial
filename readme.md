@@ -228,11 +228,11 @@ peripherals.
 	| ------- | -------------- |
 	| Address | Name           |
 	| ------- | -------------- |
-	| 0x8000  | LED/Switches   |
-	| 0x8001  | UART TX/RX     |
-	| 0x8002  | UART Clock TX  |
-	| 0x8003  | UART Clock RX  |
-	| 0x8004  | UART Control   |
+	| 0x4000  | LED/Switches   |
+	| 0x4001  | UART TX/RX     |
+	| 0x4002  | UART Clock TX  |
+	| 0x4003  | UART Clock RX  |
+	| 0x4004  | UART Control   |
 	| ------- | -------------- |
 
 * LED/Switches
@@ -350,6 +350,11 @@ CPU, and roughly the same size (although a direct comparison is difficult).
 It can address less memory (1K) without bank-switching. There is also a
 different version made with 7400 series logic gates
 <https://www.bigmessowires.com/nibbler/>.
+
+* Leros and Lipsi
+
+See <https://github.com/leros-dev/leros>, 
+also <https://github.com/schoeberl/lipsi>, 
 
 # References / Appendix
 

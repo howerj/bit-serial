@@ -113,7 +113,7 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 
 static inline mw_t bload(bcpu_t *b, mw_t addr) {
 	assert(b);
-	if (!(0x8000ul & addr)) {
+	if (!(0x4000ul & addr)) {
 		if (addr >= MSIZE)
 			return 0;
 		return b->m[addr % MSIZE];
@@ -127,7 +127,7 @@ static inline mw_t bload(bcpu_t *b, mw_t addr) {
 
 static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	assert(b);
-	if (!(0x8000ul & addr)) {
+	if (!(0x4000ul & addr)) {
 		if (addr >= MSIZE)
 			return;
 		b->m[addr % MSIZE] = val;

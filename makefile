@@ -15,7 +15,7 @@ run: bit bit.hex
 talk:
 	picocom --omap delbs -e b -b ${BAUD} ${USB}
 
-simulation: tb.ghw vhdl.log
+simulation: tb.ghw
 
 viewer: tb.ghw signals.tcl
 	gtkwave -S signals.tcl -f $< > /dev/null 2>&1 &
@@ -45,8 +45,8 @@ tb.o: tb.vhd bit.o peripherals.o top.o
 tb: tb.o bit.o peripherals.o top.o
 	ghdl -e $@
 
-tb.ghw vhdl.log: tb tb.conf bit.hex
-	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable > vhdl.log
+tb.ghw: tb tb.conf bit.hex
+	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable
 
 SOURCES = \
 	top.vhd \

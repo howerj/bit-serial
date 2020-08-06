@@ -74,7 +74,7 @@ architecture rtl of peripherals is
 
 	signal io_addr: std_ulogic_vector(2 downto 0);
 begin
-	io           <= c.r_a(c.r_a'high) = '1' and ae = '0' after g.delay;
+	io           <= c.r_a(c.r_a'high - 1) = '1' and ae = '0' after g.delay;
 	io_addr      <= c.r_a(io_addr'range) after g.delay;
 	write        <= true when (c.r_ie and (c.r_ie xor f.r_ie)) = '1' else false after g.delay;
 	ld           <= c.r_ld                    after g.delay;
@@ -82,6 +82,8 @@ begin
 	tx_fifo_data <= c.r_i(tx_fifo_data'range) after g.delay;
 	reg          <= c.r_i(reg'range)          after g.delay;
 
+	-- TODO: User smaller/simpler UART with fixed baud rate and format.
+	-- TODO: Use byte aligned addresses instead of word aligned.
 	uart: entity work.uart_top
 		generic map (g => g, baud => baud, use_fifo => use_uart_fifo)
 		port map(

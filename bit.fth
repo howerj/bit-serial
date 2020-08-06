@@ -80,13 +80,13 @@ size =cell - tep !
       dup tflash + =cell + count 1f and type space t@
    ?dup 0= until ;m
 :m .stat
-	0 if
-		." target: "      target.1      +order words cr cr
-		." target-only: " target.only.1 +order words cr cr
-		." assembler: "   assembler.1   +order words cr cr
-		." meta: "        meta.1        +order words cr cr
-	then
-	." used> " there dup ." 0x" .h ." / " .d cr ;m
+  0 if
+    ." target: "      target.1      +order words cr cr
+    ." target-only: " target.only.1 +order words cr cr
+    ." assembler: "   assembler.1   +order words cr cr
+    ." meta: "        meta.1        +order words cr cr
+  then
+  ." used> " there dup ." 0x" .h ." / " .d cr ;m
 :m .end only forth definitions decimal ;m
 :m atlast tlast @ ;m
 :m tvar   get-current >r meta.1 set-current create r> set-current there , t, does> @ ;m
@@ -199,40 +199,40 @@ label: TERMBUF
 \ ---- ---- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- ---- ----
 
 label: start
-	start call entry t!
-	fdefault
-	{sp0} iLOAD-C {sp} iSTORE-C
-	{rp0} iLOAD-C {rp} iSTORE-C
-	<cold> iLOAD-C
-	ip iSTORE-C
-	\ -- fall-through --
+  start call entry t!
+  fdefault
+  {sp0} iLOAD-C {sp} iSTORE-C
+  {rp0} iLOAD-C {rp} iSTORE-C
+  <cold> iLOAD-C
+  ip iSTORE-C
+  \ -- fall-through --
 label: vm ( The Forth virtual machine )
-	fdefault
-	ip iLOAD-C
-	w iSTORE-C
-	ip iLOAD-C
-	1 iADD
-	ip iSTORE-C
-	w iLOAD-C
-	0 iSET \ jump to next token
+  fdefault
+  ip iLOAD-C
+  w iSTORE-C
+  ip iLOAD-C
+  1 iADD
+  ip iSTORE-C
+  w iLOAD-C
+  0 iSET \ jump to next token
 
 label: {nest} ( function call: accumulator must contain '0 iGET' prior to call )
-	w iSTORE-C ( store '0 iGET' into working pointer )
-	++rp
-	ip iLOAD-C
-	{rp} iSTORE
-	w iLOAD-C
-	2 iADD
-	ip iSTORE-C
-	vm branch
+  w iSTORE-C ( store '0 iGET' into working pointer )
+  ++rp
+  ip iLOAD-C
+  {rp} iSTORE
+  w iLOAD-C
+  2 iADD
+  ip iSTORE-C
+  vm branch
 
 label: {unnest} ( return from function call )
-	{rp} iLOAD
-	w iSTORE-C
-	--rp
-	w iLOAD-C
-	ip iSTORE-C
-	vm branch
+  {rp} iLOAD
+  w iSTORE-C
+  --rp
+  w iLOAD-C
+  ip iSTORE-C
+  vm branch
 
 :m nest 0 iGET {nest} branch ;m
 :m unnest {unnest} branch ;m
@@ -241,81 +241,81 @@ label: {unnest} ( return from function call )
 :m =0iGET F000 ;m
 
 :m :ht ( "name" -- : forth only routine )
-	get-current >r target.1 set-current create
-	r> set-current CAFEBABE talign there ,
-	nest
-	does> @ branch ( really a call ) ;m
+  get-current >r target.1 set-current create
+  r> set-current CAFEBABE talign there ,
+  nest
+  does> @ branch ( really a call ) ;m
 
 :m :t ( "name" -- : forth only routine )
-	>in @ thead >in !
-	get-current >r target.1 set-current create
-	r> set-current CAFEBABE talign there ,
-	nest
-	does> @ branch ( really a call ) ;m
+  >in @ thead >in !
+  get-current >r target.1 set-current create
+  r> set-current CAFEBABE talign there ,
+  nest
+  does> @ branch ( really a call ) ;m
 
 :m :to ( "name" -- : forth only, target only routine )
-	>in @ thead >in !
-	get-current >r target.only.1 set-current create r> set-current
-	there ,
-	nest CAFEBABE
-	does> @ branch ;m
+  >in @ thead >in !
+  get-current >r target.only.1 set-current create r> set-current
+  there ,
+  nest CAFEBABE
+  does> @ branch ;m
 
 :m ;t CAFEBABE <> if abort" unstructured" then talign unnest target.only.1 -order ;
 
 :m a: ( "name" -- : assembly only routine, no header )
-	CAFED00D
-	target.1 +order definitions
-	create talign there ,
-	assembler.1 +order
-	does> @ branch ;m
+  CAFED00D
+  target.1 +order definitions
+  create talign there ,
+  assembler.1 +order
+  does> @ branch ;m
 :m a; CAFED00D <> if abort" unstructured" then vm branch assembler.1 -order ;m
 
 a: opPush ( pushes the next value in instruction stream on to the stack )
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
 
-	ip iLOAD-C
-	w iSTORE-C
-	w iLOAD
-	tos iSTORE-C
-	ip iLOAD-C 1 iADD ip iSTORE-C
-	a;
+  ip iLOAD-C
+  w iSTORE-C
+  w iLOAD
+  tos iSTORE-C
+  ip iLOAD-C 1 iADD ip iSTORE-C
+  a;
 
 a: opJump ( jump to next value in instruction stream )
-	ip iLOAD
-	ip iSTORE-C
-	a;
+  ip iLOAD
+  ip iSTORE-C
+  a;
 
 
 a: opJumpZ
-	tos iLOAD-C
-	w iSTORE-C
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	w iLOAD-C
-	if
-		ip iLOAD-C 1 iADD ip iSTORE-C
-	else
-		ip iLOAD
-		ip iSTORE-C
-	then
-	a;
+  tos iLOAD-C
+  w iSTORE-C
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  w iLOAD-C
+  if
+    ip iLOAD-C 1 iADD ip iSTORE-C
+  else
+    ip iLOAD
+    ip iSTORE-C
+  then
+  a;
 
 a: opNext
-	{rp} iLOAD
-	if
-		set 2/ iADD
-		{rp} iSTORE
-		( 'fdefault' handled in 'vm' )
-		ip iLOAD
-		ip iSTORE-C
-	else
-		ip iLOAD-C 1 iADD ip iSTORE-C
-		--rp
-	then
-	a;
+  {rp} iLOAD
+  if
+    set 2/ iADD
+    {rp} iSTORE
+    ( 'fdefault' handled in 'vm' )
+    ip iLOAD
+    ip iSTORE-C
+  else
+    ip iLOAD-C 1 iADD ip iSTORE-C
+    --rp
+  then
+  a;
 
 :m lit         opPush t, ;m
 :m [char] char opPush t, ;m
@@ -339,235 +339,221 @@ a: bye halt! a;   ( -- : bye bye! )
 a: exit unnest a; ( -- : exit from current function )
 
 a: lls ( u shift -- u : shift left by number of bits set )
-	{sp} iLOAD
-	tos 2/ iLSHIFT
-	tos iSTORE-C
-	--sp
-	a;
+  {sp} iLOAD
+  tos 2/ iLSHIFT
+  tos iSTORE-C
+  --sp
+  a;
 
 a: lrs ( u shift -- u : shift right by number of bits set )
-	{sp} iLOAD
-	tos 2/ iRSHIFT
-	tos iSTORE-C
-	--sp
-	a;
+  {sp} iLOAD
+  tos 2/ iRSHIFT
+  tos iSTORE-C
+  --sp
+  a;
 
 a: and ( u u -- u : bit wise AND )
-	{sp} iLOAD
-	tos 2/ iAND
-	tos iSTORE-C
-	--sp
-	a;
+  {sp} iLOAD
+  tos 2/ iAND
+  tos iSTORE-C
+  --sp
+  a;
 
 a: or ( u u -- u : bit wise OR )
-	{sp} iLOAD
-	tos 2/ iOR
-	tos iSTORE-C
-	--sp
-	a;
+  {sp} iLOAD
+  tos 2/ iOR
+  tos iSTORE-C
+  --sp
+  a;
 
 a: xor ( u u -- u : bit wise XOR )
-	{sp} iLOAD
-	tos 2/ iXOR
-	tos iSTORE-C
-	--sp
-	a;
+  {sp} iLOAD
+  tos 2/ iXOR
+  tos iSTORE-C
+  --sp
+  a;
 
 a: + ( u u -- u : Plain old addition )
-	{sp} iLOAD
-	tos 2/ iADD
-	tos iSTORE-C
-	fdefault
-	--sp
-	a;
+  {sp} iLOAD
+  tos 2/ iADD
+  tos iSTORE-C
+  fdefault
+  --sp
+  a;
 
 a: um+ ( u u -- u f : Add with carry )
-	{sp} iLOAD
-	tos 2/ iADD
-	{sp} iSTORE
-	flags?
-	flgCy iAND
-	tos iSTORE-C
-	( 'fdefault' handled in 'vm' ) a;
+  {sp} iLOAD
+  tos 2/ iADD
+  {sp} iSTORE
+  flags?
+  flgCy iAND
+  tos iSTORE-C
+  ( 'fdefault' handled in 'vm' ) a;
 
 a: @ ( a -- u : load a memory address )
-	tos iLOAD-C
-	1 iRSHIFT
-	tos iSTORE-C
-	tos iLOAD
-	tos iSTORE-C
-	a;
+  tos iLOAD-C
+  1 iRSHIFT
+  tos iSTORE-C
+  tos iLOAD
+  tos iSTORE-C
+  a;
 
 a: ! ( u a -- store a cell at a memory address )
-	tos iLOAD-C
-	1 iRSHIFT
-	w iSTORE-C
-	{sp} iLOAD
-	w iSTORE
-	--sp
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	a;
-
-a: io@ ( a16 -- u )
-	tos iLOAD
-	tos iSTORE-C
-	a;
-
-a: io! ( u a16 -- )
-	{sp} iLOAD
-	tos iSTORE
-	--sp
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	a;
+  tos iLOAD-C
+  1 iRSHIFT
+  w iSTORE-C
+  {sp} iLOAD
+  w iSTORE
+  --sp
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  a;
 
 a: c@ ( b -- c )
-	tos iLOAD-C
-	1 iRSHIFT
-	w iSTORE-C
-	w iLOAD
-	w iSTORE-C
-	tos iLOAD-C
-	1 iAND if
-		w iLOAD-C
-		low 2/ iRSHIFT
-	else
-		w iLOAD-C
-		low 2/ iAND
-	then
-	tos iSTORE-C
-	a;
+  tos iLOAD-C
+  1 iRSHIFT
+  w iSTORE-C
+  w iLOAD
+  w iSTORE-C
+  tos iLOAD-C
+  1 iAND if
+    w iLOAD-C
+    low 2/ iRSHIFT
+  else
+    w iLOAD-C
+    low 2/ iAND
+  then
+  tos iSTORE-C
+  a;
 
 a: dup ( u -- u u : duplicate item on top of stack )
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
-	a;
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
+  a;
 
 a: drop ( u -- : drop it like it's hot )
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	a;
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  a;
 
 a: swap ( u1 u2 -- u2 u1 : swap top two stack items )
-	{sp} iLOAD
-	w iSTORE-C
-	tos iLOAD-C
-	{sp} iSTORE
-	w iLOAD-C
-	tos iSTORE-C
-	a;
+  {sp} iLOAD
+  w iSTORE-C
+  tos iLOAD-C
+  {sp} iSTORE
+  w iLOAD-C
+  tos iSTORE-C
+  a;
 
 a: over ( u1 u2 -- u1 u2 u1 : reach over top of stack and copy next on stack )
-	{sp} iLOAD
-	w iSTORE-C
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
-	w iLOAD-C
-	tos iSTORE-C
-	a;
+  {sp} iLOAD
+  w iSTORE-C
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
+  w iLOAD-C
+  tos iSTORE-C
+  a;
 
 a: 1- ( u -- u : decrement top of stack by one )
-	tos iLOAD-C
-	set 2/ iADD
-	tos iSTORE-C
-	a;
+  tos iLOAD-C
+  set 2/ iADD
+  tos iSTORE-C
+  a;
 
 a: >r ( u -- , R: -- u : move variable from data to return stack )
-	++rp
-	tos iLOAD-C
-	{rp} iSTORE
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	a;
+  ++rp
+  tos iLOAD-C
+  {rp} iSTORE
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  a;
 
 :m for talign >r begin ;m
 :m =>r [ t' >r ] literal call ;m
 :m =next [ t' opNext ] literal call ;m
 
 a: r>  ( -- u , R: u -- : move variable from return to data stack )
-	{rp} iLOAD
-	w iSTORE-C
-	--rp
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
-	w iLOAD-C
-	tos iSTORE-C
-	a;
+  {rp} iLOAD
+  w iSTORE-C
+  --rp
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
+  w iLOAD-C
+  tos iSTORE-C
+  a;
 
 a: r@ ( -- u, R: u -- u : copy top of return stack to data stack )
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
-	{rp} iLOAD
-	tos iSTORE-C
-	a;
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
+  {rp} iLOAD
+  tos iSTORE-C
+  a;
 
 a: rdrop ( --, R: u -- : drop top item on return stack )
-	--rp
-	a;
+  --rp
+  a;
 
 a: 0= ( u -- u : is top of stack equal to zero? )
-	tos iLOAD-C
-	if
-		0 iLOAD-C
-	else
-		set iLOAD-C
-	then
-	tos iSTORE-C
-	a;
+  tos iLOAD-C
+  if
+    0 iLOAD-C
+  else
+    set iLOAD-C
+  then
+  tos iSTORE-C
+  a;
 
 a: execute ( xt -- : execute an execution token! )
-	tos iLOAD-C
-	w iSTORE-C
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	w iLOAD-C
-	1 iRSHIFT
-	{nest} branch
-	a;
+  tos iLOAD-C
+  w iSTORE-C
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  w iLOAD-C
+  1 iRSHIFT
+  {nest} branch
+  a;
 
 a: sp! ( ??? u -- ??? : set stack depth )
-	tos iLOAD-C
-	{sp} iSTORE-C
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	a;
+  tos iLOAD-C
+  {sp} iSTORE-C
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  a;
 
 a: rp! ( u -- , R: ??? --- ??? : set return stack depth )
-	tos iLOAD-C
-	{rp} iSTORE-C
-	{sp} iLOAD
-	tos iSTORE-C
-	--sp
-	a;
+  tos iLOAD-C
+  {rp} iSTORE-C
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  a;
 
 a: sp@ ( -- u : get variable stack depth )
-	{sp} iLOAD-C
-	w iSTORE-C
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
-	w iLOAD-C
-	tos iSTORE-C
-	a;
+  {sp} iLOAD-C
+  w iSTORE-C
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
+  w iLOAD-C
+  tos iSTORE-C
+  a;
 
 a: rp@ ( -- u : get return stack depth )
-	++sp
-	tos iLOAD-C
-	{sp} iSTORE
-	{rp} iLOAD-C
-	tos iSTORE-C
-	a;
+  ++sp
+  tos iLOAD-C
+  {sp} iSTORE
+  {rp} iLOAD-C
+  tos iSTORE-C
+  a;
 
 \ ---- ---- ---- ---- ---- no more direct assembly ---- ---- ---- ---- ----
 
@@ -588,8 +574,6 @@ assembler.1 -order
 :to um+ um+ ;t
 :to @ @ ;t
 :to ! ! ;t
-:to io@ io@ ;t
-:to io! io! ;t
 :to c@ c@ ;t
 :to dup dup ;t
 :to drop drop ;t
@@ -605,11 +589,11 @@ assembler.1 -order
 :t invert #-1 xor ;t
 :t 1+ #1 + ;t
 :t emit ( ch -- :  )
-   begin 8001 lit io@ 1000 lit and 0= until
-   FF lit and 2000 lit or 8001 lit io! ;t
+   begin 8002 lit @ 1000 lit and 0= until
+   FF lit and 2000 lit or 8002 lit ! ;t
 :t key? ( -- ch -1 | 0 )
-   8001 lit io@ 100 lit and if #0 exit then
-   400 lit 8001 lit io! 8001 lit io@ FF lit and #-1 ;t
+   8002 lit @ 100 lit and if #0 exit then
+   400 lit 8002 lit ! 8002 lit @ FF lit and #-1 ;t
 :t here h lit @ ;t
 :t base {base} lit ;t  ( -- a : base variable controls input/output radix )
 :t dpl {dpl} lit ;t ( -- a : push address of 'dpl' onto the variable stack )
@@ -659,8 +643,9 @@ assembler.1 -order
 :t , align here ! cell allot ;t         ( u -- : write a value into the dictionary )
 :t dnegate invert >r invert #1 um+ r> + ;t ( d -- -d : negate a double cell )
 :t abs dup 0< if negate then ;t         ( n -- u : absolute value of a number )
-:t max 2dup > if drop exit then nip ;t  ( n n -- n : maximum of two numbers )
-:t min 2dup < if drop exit then nip ;t  ( n n -- n : minimum of two numbers )
+:t mux dup >r and swap r> invert and or ;t ( u1 u2 f -- )
+:t max 2dup < mux ;t  ( n n -- n : maximum of two numbers )
+:t min 2dup > mux ;t  ( n n -- n : minimum of two numbers )
 :t +string #1 over min rot over + rot rot - ;t ( b u -- b u : increment str )
 :t catch ( xt -- exception# | 0 \ return addr on stack )
    sp@ >r              ( xt )   \ save data stack pointer
@@ -671,17 +656,17 @@ assembler.1 -order
    rdrop               ( )      \ discard saved stack ptr
    #0 ;t               ( 0 )    \ normal completion
 :t throw ( ??? exception# -- ??? exception# )
-    ?dup if	            ( exc# )     \ 0 throw is no-op
+    ?dup if              ( exc# )     \ 0 throw is no-op
       {handler} lit @ rp!   ( exc# )     \ restore prev return stack
       r> {handler} lit !    ( exc# )     \ restore prev handler
       r> swap >r            ( saved-sp ) \ exc# on return stack
       sp! drop r>           ( exc# )     \ restore stack
     then ;t
 :t um* ( u u -- ud : double cell width multiply )
-	#0 swap ( u1 0 u2 ) $F lit
-	for dup um+ >r >r dup um+ r> + r>
-		if >r over um+ r> + then
-	next rot drop ;t
+  #0 swap ( u1 0 u2 ) $F lit
+  for dup um+ >r >r dup um+ r> + r>
+    if >r over um+ r> + then
+  next rot drop ;t
 :t * um* drop ;t  ( n n -- n : multiply )
 :t um/mod ( ud u -- ur uq : unsigned double cell width divide/modulo )
   ?dup 0= if -A lit throw then
@@ -712,23 +697,23 @@ assembler.1 -order
 :t cr .$ 2 tc, =cr tc, =lf tc, ;t ( -- : print new line )
 :t tap dup emit over c! 1+ ;t     ( bot eot cur c -- bot eot cur )
 :t ktap ( bot eot cur c -- bot eot cur )
-	dup dup =cr lit <> >r  =lf lit <> r> and if \ Not End of Line?
-		dup =bksp lit <> >r =del lit <> r> and if \ Not Delete Char?
-			bl tap exit
-		then
-		>r over r@ < dup if
-			=bksp lit dup emit space emit
-		then
-		r> +
-		exit
-	then drop nip dup ;t
+  dup dup =cr lit <> >r  =lf lit <> r> and if \ Not End of Line?
+    dup =bksp lit <> >r =del lit <> r> and if \ Not Delete Char?
+      bl tap exit
+    then
+    >r over r@ < dup if
+      =bksp lit dup emit space emit
+    then
+    r> +
+    exit
+  then drop nip dup ;t
 :t accept ( b u -- b u : read in a line of user input )
-	over + over
-	begin
-		2dup xor
-	while
-		key dup bl - $5F lit u< if tap else ktap then
-	repeat drop over - ;t
+  over + over
+  begin
+    2dup xor
+  while
+    key dup bl - $5F lit u< if tap else ktap then
+  repeat drop over - ;t
 :t query TERMBUF lit =buf lit accept #tib lit ! drop #0 >in ! ;t ( -- : get line)
 :t ?depth depth 1- > if -4 lit throw then ;t ( u -- : check stack depth )
 :t -trailing ( b u -- b u : remove trailing spaces )
@@ -879,16 +864,22 @@ assembler.1 -order
 :to ( [char] ) parse 2drop ;t immediate ( "comment" -- discard until parenthesis )
 :to \ source drop @ >in ! ;t immediate  ( "comment" -- discard until end of line )
 :to immediate last nfa @ $40 lit or last nfa ! ;t ( -- : turn previously defined word into an immediate one )
-:t dump ( a u -- : print out area of memory )
-	begin
-		dup
-	while
-		dup F lit and 0= if cr then
-		over c@
-		2 lit u.r
-		space
-		+string
-	repeat 2drop cr ;t
+\ :t dump ( a u -- : print out area of memory )
+\   begin
+\     dup
+\   while
+\     dup F lit and 0= if cr then
+\     over c@
+\     2 lit u.r
+\     space
+\     +string
+\   repeat 2drop cr ;t
+:to dump
+  begin dup while
+    over c@
+    2 lit u.r space
+    +string
+  repeat 2drop ;t
 :t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( -- )
 :t prequit hex postpone [ #0 >in ! #0 ;t ( -- )
 :t quit ( -- )

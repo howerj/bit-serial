@@ -633,7 +633,7 @@ assembler.1 -order
 :t = xor 0= ;t               ( u u -- f : equality )
 :t <> = 0= ;t                ( u u -- f : inequality )
 :t 0>= 8000 lit and 0= ;t    ( n -- f : greater or equal to zero )
-:t 0< 8000 lit and 0= 0= ;t  ( n -- f : less than zero )
+:t 0< 0>= 0= ;t              ( n -- f : less than zero )
 :t negate 1- invert ;t       ( n -- n : negate [twos compliment] )
 :t - 1- invert + ;t          ( u u -- u : subtract )
 :t < - 0< ;t                 ( n n -- f : signed less than )
@@ -703,7 +703,6 @@ assembler.1 -order
 :t key begin key? until ;t     ( c -- : get a character from UART )
 :t type begin dup while swap count emit swap 1- repeat 2drop ;t ( b u -- )
 :t cmove  for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;t ( b1 b2 u -- )
-:t pack$  dup >r 2dup ! 1+ swap cmove r> ;t ( b u a -- a : pack a string )
 :t do$ r> r> 2* dup count + aligned 2/ >r swap >r ;t ( -- a : )
 :t ($) do$ ;t            ( -- a : do string NB. )
 :t .$ do$ count type ;t  ( -- : print string, next cells contain string )
@@ -713,11 +712,10 @@ assembler.1 -order
 :t cr .$ 2 tc, =cr tc, =lf tc, ;t ( -- : print new line )
 :t tap dup emit over c! 1+ ;t     ( bot eot cur c -- bot eot cur )
 :t ktap ( bot eot cur c -- bot eot cur )
-	dup =cr lit xor if
-		=bksp lit xor ( delete? ) if
+	dup dup =cr lit <> >r  =lf lit <> r> and if \ Not End of Line?
+		dup =bksp lit <> >r =del lit <> r> and if \ Not Delete Char?
 			bl tap exit
 		then
-		( ^h : bot eot cur -- bot eot cur )
 		>r over r@ < dup if
 			=bksp lit dup emit space emit
 		then
@@ -856,8 +854,7 @@ assembler.1 -order
   then
   r> #0 ?found \ Could vector ?found here, to handle arbitrary words
   ;t
-:t word ( 1depth ) parse ( ?length ) here pack$ ;t ( c -- b )
-:t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( -- )
+:t word ( 1depth ) parse ( ?length ) here dup >r 2dup ! 1+ swap cmove r> ;t ( c -- b )
 :to words last begin dup nfa count 1f lit and space type @ ?dup 0= until ;t
 :to see bl word find ?found
     cr begin dup @ =unnest lit <> while dup @ u. cell+ repeat @ u. ;t
@@ -892,10 +889,11 @@ assembler.1 -order
 		space
 		+string
 	repeat 2drop cr ;t
+:t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( -- )
 :t prequit hex postpone [ #0 >in ! #0 ;t ( -- )
 :t quit ( -- )
    there t2/ <cold> t! \ program entry point set here
-   \ ." eForth v2.1.0"
+   ." eForth 2.2" cr
    prequit
    begin
      query t' eval lit catch

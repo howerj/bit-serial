@@ -12,9 +12,7 @@
 #include <limits.h>
 
 #define MSIZE     (4096u)
-#define BACKSPACE (8)
 #define ESCAPE    (27)
-#define DELETE    (127)
 
 typedef uint16_t mw_t; /* machine word */
 
@@ -63,7 +61,7 @@ static int wrap_getch(bcpu_t *b) {
 	const int ch = b->in ? fgetc(b->in) : getch();
 	if ((ch == ESCAPE) || (ch < 0))
 		b->done = 1;
-	return ch == DELETE ? BACKSPACE : ch;
+	return ch;
 }
 
 static int wrap_putch(bcpu_t *b, const int ch) {

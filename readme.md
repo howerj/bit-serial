@@ -230,10 +230,12 @@ peripherals.
 	| ------- | -------------- |
 	| 0x4000  | LED/Switches   |
 	| 0x4001  | UART TX/RX     |
-	| 0x4002  | UART Clock TX  |
-	| 0x4003  | UART Clock RX  |
-	| 0x4004  | UART Control   |
+	| 0x4002  | UART Clock TX* |
+	| 0x4003  | UART Clock RX* |
+	| 0x4004  | UART Control*  |
 	| ------- | -------------- |
+	These registers are turned off by default
+	and will need to be enabled during synthesis.
 
 * LED/Switches
 

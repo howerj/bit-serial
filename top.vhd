@@ -11,12 +11,13 @@ use work.util.all;
 
 entity top is
 	generic (
-		g:             common_generics := default_settings;
-		file_name:     string          := "bit.hex";
-		N:             positive        := 16;
-		baud:          positive        := 115200;
-		debug:         natural         := 0; -- will not synthesize if greater than zero (debug off)
-		use_uart_fifo: boolean         := false
+		g:               common_generics := default_settings;
+		file_name:       string          := "bit.hex";
+		N:               positive        := 16;
+		baud:            positive        := 115200;
+		debug:           natural         := 0; -- will not synthesize if greater than zero (debug off)
+		uart_use_cfg:   boolean          := false;
+		uart_fifo_depth: natural         := 0
 	);
 	port (
 		clk:         in std_ulogic;
@@ -31,19 +32,20 @@ entity top is
 end entity;
 
 architecture rtl of top is
-	constant W:              positive   := N - 4;
+	constant W:              positive   := N - 3;
 	signal rst:              std_ulogic := '0';
 	signal i:                std_ulogic := 'X';
 	signal o, a, oe, ie, ae: std_ulogic := 'X';
 begin
 	peripheral: entity work.peripherals
 		generic map(
-			g             => g,
-			file_name     => file_name,
-			W             => W,
-			N             => N,
-			baud          => baud,
-			use_uart_fifo => use_uart_fifo)
+			g               => g,
+			file_name       => file_name,
+			W               => W,
+			N               => N,
+			baud            => baud,
+			uart_fifo_depth => uart_fifo_depth,
+			uart_use_cfg    => uart_use_cfg)
 		port map (
 			clk => clk, rst => rst,
 			tx => tx, rx => rx, ld => ld, sw => sw,

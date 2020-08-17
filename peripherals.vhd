@@ -83,7 +83,6 @@ begin
 	tx_fifo_data <= c.r_i(tx_fifo_data'range) after g.delay;
 	reg          <= c.r_i(reg'range)          after g.delay;
 
-	-- TODO: Use byte aligned addresses instead of word aligned.
 	uart: entity work.uart_top
 		generic map (
 			clock_frequency    => g.clock_frequency, 

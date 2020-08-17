@@ -138,9 +138,9 @@ The instructions are:
 	| Instruction | C Operation                            | Description                       | Cycles           |
 	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
 	| OR          | acc |= lop                             | Bitwise Or                        | [3 or 5]*(N+1)   |
-	| AND         | acc &= indir ? lop : 0xF000 | lop      | Bitwise And                       | [3 or 5]*(N+1)   |
+	| AND         | acc &= lop                             | Bitwise And                       | [3 or 5]*(N+1)   |
 	| XOR         | acc ^= lop                             | Bitwise Exclusive Or              | [3 or 5]*(N+1)   |
-	| ADD         | acc += lop + carry;                    | Add with carry, sets carry        | [3 or 5]*(N+1)   |
+	| ADD         | acc += lop                             | Add with carry, sets carry        | [3 or 5]*(N+1)   |
 	| LSHIFT      | acc = acc << lop (or rotate left)      | Shift left or Rotate left         | [3 or 5]*(N+1)   |
 	| RSHIFT      | acc = acc >> lop (or rotate right)     | Shift right or Rotate right       | [3 or 5]*(N+1)   |
 	| LOAD        | acc = memory(lop)                      | Load                              | [4 or 6]*(N+1)   |
@@ -164,9 +164,6 @@ The instructions are:
 * flg   = flags register
 * N     = bit width, which is 16.
 
-Notice that the when the indirect flag is *not* set that the top bits will be
-anded with '0xF' and not '0x0'.
-
 The number of cycles an instruction takes to complete depends on whether it
 performs an indirection, or in the case of GET/SET it depends if it it setting
 the program counter (2 cycles only) or the flags register (3 cycles), or performing
@@ -181,11 +178,8 @@ The flags in the 'flg' register are:
 	| Cy   |  0  | Carry flag, set by addition instruction |
 	| Z    |  1  | Zero flag                               |
 	| Ng   |  2  | Negative flag                           |
-	| PAR  |  3  | Parity flag, parity of accumulator      |
-	| ROT  |  4  | If set, shifts become rotates           |
-	| R    |  5  | Reset Flag - Resets the CPU             |
-	| IND  |  6  | Indirect Flag - turns indirection on    |
-	| HLT  |  7  | Halt Flag - Stops the CPU               |
+	| R    |  3  | Reset Flag - Resets the CPU             |
+	| HLT  |  4  | Halt Flag - Stops the CPU               |
 	| ---- | --- | --------------------------------------- |
 
 * The carry flag (Cy) is set by the ADD instruction, it can also be set and cleared
@@ -193,14 +187,8 @@ with the GET/SET instructions.
 * 'Z' is set whenever the accumulator is zero.
 * 'Ng' is set whenever the accumulator has its highest bit set, indicating that
   the accumulator is negative.
-* 'PAR' is the parity of the accumulator, the parity flag can be compiled at
-synthesis time to even or odd parity.
-* 'ROT', if set, means the 'LSHIFT' and 'RSHIFT' instructions will perform
-rotations instead of left/right shifts.
 * 'R', Reset flag, this resets the CPU immediately, only the HLT flag takes
 precedence.
-* 'IND', The indirect flag, which enables indirection on those instructions
-which can be indirected.
 * 'HLT', The halt flag takes priority over everything else, sending the CPU
 into a halt state.
 

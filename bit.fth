@@ -32,7 +32,7 @@ wordlist constant target.only.1
 meta.1 +order definitions
 
    2 constant =cell
-2000 constant size
+4000 constant size ( 16384 bytes, 8192 cells )
   40 constant =stksz
   40 constant =buf
 0008 constant =bksp
@@ -123,10 +123,14 @@ size =cell - tep !
 
 \ TODO: Move buffers/writeable vars to end of memory
 \ TODO: Remove iGET/iSET as instructions, move to iLOAD-C/iSTORE-C, where
-\ the load goes matters (on the indirect or in the instruction?)
+\ the load goes matters (on the indirect or in the instruction?) This will
+\ require reworking the virtual machine...
 \ TODO: Fix virtual machine so '0 iGET' does not have to be called before {nest}
 \ TODO: https://sites.google.com/site/cocoboot2/home/multi-taskinginforth (multitasking)
-\ need to implement a yield?
+\ need to implement a yield? And https://www.bradrodriguez.com/papers/mtasking.html
+\ this should be enough to implement Tetris. This would require USER variables.
+\ TODO: It might be interesting to implement the VM directly in C, some changes
+\ might have to be made, such as a fixed starting address.
  1 constant flgCy
  2 constant flgZ
  4 constant flgNg
@@ -186,6 +190,11 @@ label: {pad}      \ pad area
 =buf   tallot
 VSTACK =stksz + 2/ dup tvar {sp0} tvar {sp}  \ variable stack pointer
 RSTACK          2/ dup tvar {rp0} tvar {rp}  \ return stack pointer
+
+\ 2000 =stksz 2* - =buf - tvar {pad} \ pad buffer space
+\ 2000 =stksz 2* - dup tvar {rp0} tvar {rp} \ grows upwards
+\ 2000 dup tvar {sp0} tvar {sp} \ grows downwards
+
 0 tvar #tib    \ terminal input buffer
 label: TERMBUF
 =buf   tallot
@@ -683,11 +692,11 @@ assembler.1 -order
 :m $" ($) $literal ;m
 :t space bl emit ;t               ( -- : print space )
 :t cr .$ 2 tc, =cr tc, =lf tc, ;t ( -- : print new line )
-:t tap dup emit over c! 1+ ;t     ( bot eot cur c -- bot eot cur )
 :t ktap ( bot eot cur c -- bot eot cur )
   dup dup =cr lit <> >r  =lf lit <> r> and if \ Not End of Line?
     dup =bksp lit <> >r =del lit <> r> and if \ Not Delete Char?
-      bl tap exit
+      bl ( tap -> ) dup emit over c! 1+ ( bot eot cur c -- bot eot cur )
+      exit
     then
     >r over r@ < dup if
       =bksp lit dup emit space emit
@@ -700,7 +709,7 @@ assembler.1 -order
   begin
     2dup xor
   while
-    key dup bl - $5F lit u< if tap else ktap then
+    key dup bl - $5F lit u< if ( tap -> ) dup emit over c! 1+ else ktap then
   repeat drop over - ;t
 :t query TERMBUF lit =buf lit accept #tib lit ! drop #0 >in ! ;t ( -- : get line)
 :t ?depth depth 1- > if -4 lit throw then ;t ( u -- : check stack depth )
@@ -711,48 +720,45 @@ assembler.1 -order
     then
   next #0 ;t
 \ This could use refactoring so nothing is hidden.
-:ht lookfor ( b u c xt -- b u : skip until *xt* test succeeds )
+:ht look ( b u c xt -- b u : skip until *xt* test succeeds )
   swap >r rot rot
   begin
     dup
   while
+    \ TODO: remove special case of bl?
     over c@ r@ - r@ bl = 4 lit pick execute
     if rdrop rot drop exit then
     +string
   repeat rdrop rot drop ;t
 :ht no-match if 0> exit then 0= 0= ;t ( n f -- t )
 :ht match no-match invert ;t        ( n f -- t )
-:ht (parse)                         ( b u c -- b u delta )
-   >r over r> swap >r >r
-   r@ t' no-match lit lookfor 2dup
-   r> t' match    lit lookfor swap r> - >r - r> 1+ ;t
 :t parse ( c -- b u ; <string> )
-    >r source drop >in @ + #tib lit @ >in @ - r@ (parse) >in +!
+    >r source drop >in @ + #tib lit @ >in @ - r@ 
+    >r over r> swap >r >r
+    r@ t' no-match lit look 2dup
+    r> t' match    lit look swap r> - >r - r> 1+  ( b u c -- b u delta )
+    >in +!
     r> bl = if -trailing then #0 max ;t
 :t spaces begin dup 0> while space 1- repeat drop ;t ( +n -- )
-:t digit 9 lit over < 7 lit and + [char] 0 + ;t      ( u -- c )
-:t hold hld @ 1- dup hld ! c! ;t ( c -- : save a character in hold space )
+:t hold #-1 hld +! hld @ c! ;t ( c -- : save a character in hold space )
 :t #> 2drop hld @ pad over - ;t  ( u -- b u )
 :t #  ( d -- d : add next character in number to hold space )
    2 lit ?depth
    #0 base @ 
    ( extract ->) dup >r um/mod r> swap >r um/mod r> rot ( ud ud -- ud u )
-   digit hold ;t
+   ( digit -> ) 9 lit over < 7 lit and + [char] 0 + ( u -- c)
+   hold ;t
 :t #s begin # 2dup ( d0= -> ) or 0= until ;t       ( d -- 0 )
 :t <# pad hld ! ;t                                 ( -- )
 :t sign 0< if [char] - hold then ;t                ( n -- )
 :t u.r >r #0 <# #s #>  r> over - spaces type ;t    ( u +n -- : print u right justified by +n )
 :t u.  #0 <# #s #> space type ;t                   ( u -- : print unsigned number )
 :t . dup >r abs #0 <# #s r> sign #> space type ;t  ( n -- print number )
-:t digit? ( c base -- u f )
-  >r [char] 0 - 9 lit over <
-  if
-    7 lit -
-    dup $A lit < or
-  then dup r> u< ;t
 :t >number ( ud b u -- ud b u : convert string to number )
   begin
-    2dup >r >r drop c@ base @ digit? ( get next character )
+    2dup >r >r drop c@ base @        ( get next character )
+    ( digit? -> ) >r [char] 0 - 9 lit over <
+    if 7 lit - dup $A lit < or then dup r> u< ( c base -- u f )
     0= if                            ( d char )
       drop                           ( d char -- d )
       r> r>                          ( restore string )
@@ -859,7 +865,7 @@ assembler.1 -order
     dup F lit and 0= if cr then
     +string
   repeat 2drop ;t
-:t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( -- )
+:t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( "word" -- )
 :t prequit hex postpone [ #0 >in ! #0 ;t ( -- )
 :t quit ( -- )
    there t2/ <cold> t! \ program entry point set here

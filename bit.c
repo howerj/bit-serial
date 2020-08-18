@@ -11,8 +11,9 @@
 #include <stdarg.h>
 #include <limits.h>
 
-#define MSIZE     (4096u)
-#define ESCAPE    (27)
+#define MSIZE       (8192u)
+#define ESCAPE      (27)
+#define SLEEP_EVERY (1024ul*1024ul)
 
 typedef uint16_t mw_t; /* machine word */
 
@@ -20,7 +21,7 @@ typedef struct {
 	mw_t pc, acc, flg, m[MSIZE];
 	FILE *in, *out;
 	mw_t ch, leds, switches;
-	int done;
+	int done, sleep_ms;
 } bcpu_t;
 
 enum { fCy, fZ, fNg, fR, fHLT, };
@@ -72,6 +73,11 @@ static void sleep_us(unsigned long microseconds) {
 	nanosleep(&ts, NULL);
 }
 
+static void os_sleep_ms(bcpu_t *b, unsigned ms) { 
+	assert(b); 
+	sleep_us(ms * 1000ul);
+}
+
 static int os_kbhit(bcpu_t *b) {
 	assert(b);
 	const int fd = STDIN_FILENO;
@@ -89,13 +95,16 @@ static int os_kbhit(bcpu_t *b) {
 }
 #else
 #ifdef _WIN32
+#include <windows.h>
 extern int getch(void);
 extern int kbhit(void);
 static int os_getch(bcpu_t *b) { assert(b); return getch(); }
-static int os_kbhit(bcpu_t *b) { assert(b); return kbhit(); }
+static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); }
+static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); Sleep(ms); }
 #else
 static int os_kbhit(bcpu_t *b) { assert(b); return 1; }
 static int os_getch(bcpu_t *b) { assert(b); return getchar(); }
+static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); (void)ms; }
 #endif
 #endif /** __unix__ **/
 
@@ -133,11 +142,8 @@ static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 
 static inline mw_t bload(bcpu_t *b, mw_t addr) {
 	assert(b);
-	if (!(0x4000ul & addr)) {
-		if (addr >= MSIZE)
-			return 0;
+	if (!(0x4000ul & addr))
 		return b->m[addr % MSIZE];
-	}
 	switch (addr & 0x7) {
 	case 0: return b->switches;
 	case 1: return (!os_kbhit(b) << 8ul) | (b->ch & 0xFF);
@@ -173,13 +179,15 @@ static int bcpu(bcpu_t *b) {
 	assert(b);
 	int r = 0;
 	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
-       	unsigned count = 0;
-	flg |= (1u << fZ);
 
-	for (;b->done == 0; count++) {
+	for (unsigned count = 0; b->done == 0; count++) {
+		if ((count % SLEEP_EVERY) == 0 && b->sleep_ms > 0)
+			os_sleep_ms(b, b->sleep_ms);
+
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
+
 		if (flg & (1u << fHLT))
 			goto halt;
 		if (flg & (1u << fR)) {
@@ -227,7 +235,7 @@ halt:
 }
 
 int main(int argc, char **argv) {
-	static bcpu_t b = { .in = NULL };
+	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, };
 	if (argc != 2)
 		return 1;
 	setbuf(stdin,  NULL);

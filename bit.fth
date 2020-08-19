@@ -15,7 +15,7 @@
 \ - <https://github.com/samawati/j1eforth>
 \
 
-only forth definitions hex
+only forth also definitions hex
 
 wordlist constant meta.1
 wordlist constant target.1
@@ -29,7 +29,7 @@ wordlist constant target.only.1
 : -order ( wid -- ) get-order (order) nip set-order ;
 : +order ( wid -- ) dup >r -order get-order r> swap 1+ set-order ;
 
-meta.1 +order definitions
+meta.1 +order also definitions
 
    2 constant =cell
 4000 constant size ( 16384 bytes, 8192 cells )
@@ -48,7 +48,7 @@ variable tlast
 size =cell - tep !
 0 tlast !
 
-: :m meta.1 +order definitions : ;
+: :m meta.1 +order also definitions : ;
 : ;m postpone ; ; immediate
 :m there tdp @ ;m
 :m tc! tflash + c! ;m
@@ -87,7 +87,7 @@ size =cell - tep !
     ." meta: "        meta.1        +order words cr cr
   then
   ." used> " there dup ." 0x" .h ." / " .d cr ;m
-:m .end only forth definitions decimal ;m
+:m .end only forth also definitions decimal ;m
 :m atlast tlast @ ;m
 :m tvar   get-current >r meta.1 set-current create r> set-current there , t, does> @ ;m
 :m label: get-current >r meta.1 set-current create r> set-current there ,    does> @ ;m
@@ -121,16 +121,6 @@ size =cell - tep !
 : iSET     E000 or t, ;
 : iGET     F000 or t, ;
 
-\ TODO: Move buffers/writeable vars to end of memory
-\ TODO: Remove iGET/iSET as instructions, move to iLOAD-C/iSTORE-C, where
-\ the load goes matters (on the indirect or in the instruction?) This will
-\ require reworking the virtual machine...
-\ TODO: Fix virtual machine so '0 iGET' does not have to be called before {nest}
-\ TODO: https://sites.google.com/site/cocoboot2/home/multi-taskinginforth (multitasking)
-\ need to implement a yield? And https://www.bradrodriguez.com/papers/mtasking.html
-\ this should be enough to implement Tetris. This would require USER variables.
-\ TODO: It might be interesting to implement the VM directly in C, some changes
-\ might have to be made, such as a fixed starting address.
  1 constant flgCy
  2 constant flgZ
  4 constant flgNg
@@ -145,7 +135,7 @@ size =cell - tep !
 : zero? flags? 2 iAND ;
 :m postpone t' branch ;m
 
-assembler.1 +order definitions
+assembler.1 +order also definitions
 : begin there ;
 : until ?branch ;
 : again branch ;
@@ -156,7 +146,7 @@ assembler.1 +order definitions
 : while if swap ;
 : repeat branch then ;
 assembler.1 -order
-meta.1 +order definitions
+meta.1 +order also definitions
 
 \ ---- ---- ---- ---- ---- image generation   ---- ---- ---- ---- ---- ----
 
@@ -191,6 +181,8 @@ label: {pad}      \ pad area
 VSTACK =stksz + 2/ dup tvar {sp0} tvar {sp}  \ variable stack pointer
 RSTACK          2/ dup tvar {rp0} tvar {rp}  \ return stack pointer
 
+\ TODO: Move buffers and other variables that are r/w to end of program
+\ memory (not 4000, but 2000). This current breaks things.
 \ 2000 =stksz 2* - =buf - tvar {pad} \ pad buffer space
 \ 2000 =stksz 2* - dup tvar {rp0} tvar {rp} \ grows upwards
 \ 2000 dup tvar {sp0} tvar {sp} \ grows downwards
@@ -207,6 +199,8 @@ label: TERMBUF
 : ++rp {rp} iLOAD-C  vcell iADD {rp} iSTORE-C ;
 
 \ ---- ---- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- ---- ----
+
+\ TODO: Implement 'PAUSE', move stacks to end of memory, remove need for '0 iGET'
 
 label: start
   start call entry t!
@@ -272,7 +266,7 @@ label: {unnest} ( return from function call )
 
 :m a: ( "name" -- : assembly only routine, no header )
   CAFED00D
-  target.1 +order definitions
+  target.1 +order also definitions
   create talign there ,
   assembler.1 +order
   does> @ branch ;m
@@ -303,11 +297,12 @@ a: opJumpZ
   --sp
   t iLOAD-C
   if
-    ip iLOAD-C 1 iADD ip iSTORE-C
+    ip iLOAD-C 
+    1 iADD
   else
     ip iLOAD
-    ip iSTORE-C
   then
+  ip iSTORE-C
   a;
 
 a: opNext
@@ -835,6 +830,7 @@ assembler.1 -order
   ;t
 :t word ( 1depth ) parse ( ?length ) here dup >r 2dup ! 1+ swap cmove r> ;t ( c -- b )
 :to words last begin dup nfa count 1f lit and space type @ ?dup 0= until ;t
+\ BUG: "see word" in base ten never terminates...
 :to see bl word find ?found
     cr begin dup @ =unnest lit <> while dup @ u. cell+ repeat @ u. ;t
 :to : align here last , {last} lit ! ( "name" -- : define a new word )
@@ -867,9 +863,9 @@ assembler.1 -order
   repeat 2drop ;t
 :t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( "word" -- )
 :t prequit hex postpone [ #0 >in ! #0 ;t ( -- )
-:t quit ( -- )
+:t quit ( -- : interpreter loop [and more, does more than most QUITs] )
    there t2/ <cold> t! \ program entry point set here
-   ." eForth 3.0" cr
+   ." eForth 3.1" cr
    prequit
    begin
      query t' eval lit catch

@@ -70,6 +70,40 @@ This turns this 'readme.md' file into a HTML file.
 
 Cleans up the project.
 
+# eForth
+
+The tool-chain for the device is used to build an image for a Forth
+interpreter, more specifically a Forth interpreter similar to a dialect of
+Forth known as 'eForth', it differs between eForth in order to save on space
+which is at a premium. You should be greeted with an eForth prompt when running
+the 'make run' target that looks something like this:
+
+	$ make run
+	./bit bit.hex
+	eForth 3.1
+
+You can see all of the defined words (or functions) by typing in 'words' and
+hitting return.
+
+	$ make run
+	./bit bit.hex
+	eForth 3.1
+	words 
+
+Arithmetic in Forth in done using Reverse Polish Notation:
+
+	2 2 + . cr
+
+Will print out '4'. This is not the place for a Forth tutorial, the Forth
+interpreter is mainly here to demonstrate that the bit-serial CPU is working
+correctly and can be used for useful purposes. No demonstration would be
+complete without a 'Hello, World' program, however:
+
+	: hello cr ." Hello, World!" ;
+	hello
+
+Go use your favorite search engine to find a Forth tutorial.
+
 # Use Case
 
 Often in an [FPGA][] design there is spare Dual Port Block RAM (BRAM) available,

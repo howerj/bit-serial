@@ -35,7 +35,7 @@ enum { fCy, fZ, fNg, fR, fHLT, };
 #define _POSIX_C_SOURCE 199309L
 #include <time.h>
 
-static int os_term_save(const int fd, struct termios *oldattr, struct termios *newattr) {
+static int os_term_change(const int fd, struct termios *oldattr, struct termios *newattr) {
 	if (tcgetattr(fd, oldattr) < 0)
 		return -1;
 	*newattr = *oldattr;
@@ -45,7 +45,6 @@ static int os_term_save(const int fd, struct termios *oldattr, struct termios *n
 		return -2;
 	return 0;
 }
-
 
 static int os_term_restore(const int fd, struct termios *oldattr) {
 	return tcsetattr(fd, TCSANOW, oldattr) < 0 ? -2 : 0;
@@ -57,7 +56,7 @@ static int os_getch(bcpu_t *b) {
 	struct termios oldattr, newattr;
 	if (!isatty(fd))
 		return fgetc(stdin);
-	if (os_term_save(fd, &oldattr, &newattr) < 0)
+	if (os_term_change(fd, &oldattr, &newattr) < 0)
 		return -1;
 	const int ch = getchar();
 	if (os_term_restore(fd, &oldattr) < 0)
@@ -84,9 +83,9 @@ static int os_kbhit(bcpu_t *b) {
 	if (!isatty(fd))
 		return 1;
 	struct termios oldattr, newattr;
-	if (os_term_save(fd, &oldattr, &newattr) < 0)
+	if (os_term_change(fd, &oldattr, &newattr) < 0)
 		return -1;
-	sleep_us(1000);
+	sleep_us(1000); /* bit of a hack */
 	int bytes = 0;
 	ioctl(fd, FIONREAD, &bytes);
 	if (os_term_restore(fd, &oldattr) < 0)

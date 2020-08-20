@@ -156,22 +156,24 @@ meta.1 +order also definitions
 label: entry
 0 t,  \ entry point to virtual machine
 
-FFFF tvar set     \ all bits set, -1
-  FF tvar low     \ lowest bytes set
-0 tvar  <cold>    \ entry point of virtual machine program, set later on
-0 tvar  ip        \ instruction pointer
-0 tvar  w         \ working pointer
-0 tvar  t         \ temporary register
-0 tvar  tos       \ top of stack
-0 tvar  h         \ dictionary pointer
-0 tvar  pwd       \ previous word pointer
-0 tvar  {state}   \ compiler state
-0 tvar  {hld}     \ hold space pointer
-10 tvar {base}    \ input/output radix, default = 16
--1 tvar {dpl}     \ number of places after fraction )
-0  tvar {in}      \ position in query string
-0  tvar {handler} \ throw/catch handler
-0  tvar {last}    \ last defined word
+FFFF tvar set       \ all bits set, -1
+  FF tvar low       \ lowest bytes set
+   0 tvar <cold>    \ entry point of virtual machine program, set later on
+   0 tvar ip        \ instruction pointer
+   0 tvar w         \ working pointer
+   0 tvar t         \ temporary register
+   0 tvar tos       \ top of stack
+   0 tvar h         \ dictionary pointer
+   0 tvar pwd       \ previous word pointer
+   0 tvar {state}   \ compiler state
+   0 tvar {hld}     \ hold space pointer
+  10 tvar {base}    \ input/output radix, default = 16
+  -1 tvar {dpl}     \ number of places after fraction )
+   0 tvar {in}      \ position in query string
+   0 tvar {handler} \ throw/catch handler
+   0 tvar {last}    \ last defined word
+   0 tvar #tib      \ terminal input buffer
+
 label: RSTACK     \ return stack start, grows upwards
 =stksz tallot
 label: VSTACK     \ variable stack *end*, grows downwards
@@ -181,15 +183,13 @@ label: {pad}      \ pad area
 VSTACK =stksz + 2/ dup tvar {sp0} tvar {sp}  \ variable stack pointer
 RSTACK          2/ dup tvar {rp0} tvar {rp}  \ return stack pointer
 
-\ TODO: Move buffers and other variables that are r/w to end of program
-\ memory (not 4000, but 2000). This current breaks things.
-\ 2000 =stksz 2* - =buf - tvar {pad} \ pad buffer space
-\ 2000 =stksz 2* - dup tvar {rp0} tvar {rp} \ grows upwards
-\ 2000 dup tvar {sp0} tvar {sp} \ grows downwards
-
-0 tvar #tib    \ terminal input buffer
 label: TERMBUF
 =buf   tallot
+
+\ 2000                       dup tvar {sp0} tvar {sp} \ grows downwards
+\ 2000 =stksz 2* -           dup tvar {rp0} tvar {rp} \ grows upwards
+\ 2000 =stksz 2* - =buf    - tvar {pad} \ pad buffer space
+\ 2000 =stksz 2* - =buf 2* - constant TERMBUF \ pad buffer space
 
 : vcell 1 ( cell '1' should contain '1' ) ;
 : -vcell set 2/ ;
@@ -200,7 +200,7 @@ label: TERMBUF
 
 \ ---- ---- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- ---- ----
 
-\ TODO: Implement 'PAUSE', move stacks to end of memory, remove need for '0 iGET'
+\ TODO: Implement 'PAUSE', remove need for '0 iGET'
 
 label: start
   start call entry t!
@@ -212,9 +212,7 @@ label: start
 label: vm ( The Forth virtual machine )
   ip iLOAD-C
   w iSTORE-C
-  ip iLOAD-C
-  1 iADD
-  ip iSTORE-C
+  ip iLOAD-C 1 iADD ip iSTORE-C
   w iLOAD-C
   0 iSET \ jump to next token
 
@@ -313,8 +311,8 @@ a: opNext
     ip iLOAD
     ip iSTORE-C
   else
-    ip iLOAD-C 1 iADD ip iSTORE-C
     --rp
+    ip iLOAD-C 1 iADD ip iSTORE-C
   then
   a;
 
@@ -647,6 +645,7 @@ assembler.1 -order
 :t max 2dup < mux ;t  ( n n -- n : maximum of two numbers )
 :t min 2dup > mux ;t  ( n n -- n : minimum of two numbers )
 :t +string #1 over min rot over + rot rot - ;t ( b u -- b u : increment str )
+\ BUG: catch/throw is not quite right...
 :t catch ( xt -- exception# | 0 \ return addr on stack )
    sp@ >r              ( xt )   \ save data stack pointer
    {handler} lit @ >r  ( xt )   \ and previous handler
@@ -726,7 +725,7 @@ assembler.1 -order
     +string
   repeat rdrop rot drop ;t
 :ht no-match if 0> exit then 0= 0= ;t ( n f -- t )
-:ht match no-match invert ;t        ( n f -- t )
+:ht match no-match invert ;t          ( n f -- t )
 :t parse ( c -- b u ; <string> )
     >r source drop >in @ + #tib lit @ >in @ - r@ 
     >r over r> swap >r >r
@@ -736,15 +735,15 @@ assembler.1 -order
     r> bl = if -trailing then #0 max ;t
 :t spaces begin dup 0> while space 1- repeat drop ;t ( +n -- )
 :t hold #-1 hld +! hld @ c! ;t ( c -- : save a character in hold space )
-:t #> 2drop hld @ pad over - ;t  ( u -- b u )
+:t #> 2drop hld @ pad =buf lit + over - ;t  ( u -- b u )
 :t #  ( d -- d : add next character in number to hold space )
    2 lit ?depth
    #0 base @ 
    ( extract ->) dup >r um/mod r> swap >r um/mod r> rot ( ud ud -- ud u )
-   ( digit -> ) 9 lit over < 7 lit and + [char] 0 + ( u -- c)
+   ( digit -> ) 9 lit over < 7 lit and + [char] 0 + ( u -- c )
    hold ;t
 :t #s begin # 2dup ( d0= -> ) or 0= until ;t       ( d -- 0 )
-:t <# pad hld ! ;t                                 ( -- )
+:t <# pad =buf lit + hld ! ;t                      ( -- )
 :t sign 0< if [char] - hold then ;t                ( n -- )
 :t u.r >r #0 <# #s #>  r> over - spaces type ;t    ( u +n -- : print u right justified by +n )
 :t u.  #0 <# #s #> space type ;t                   ( u -- : print unsigned number )
@@ -830,7 +829,6 @@ assembler.1 -order
   ;t
 :t word ( 1depth ) parse ( ?length ) here dup >r 2dup ! 1+ swap cmove r> ;t ( c -- b )
 :to words last begin dup nfa count 1f lit and space type @ ?dup 0= until ;t
-\ BUG: "see word" in base ten never terminates...
 :to see bl word find ?found
     cr begin dup @ =unnest lit <> while dup @ u. cell+ repeat @ u. ;t
 :to : align here last , {last} lit ! ( "name" -- : define a new word )

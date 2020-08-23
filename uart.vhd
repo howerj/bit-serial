@@ -61,8 +61,8 @@ package uart_pkg is
 
 	component uart_tx is
 		generic (
-			g:       uart_generics; 
-			N:       positive; 
+			g:       uart_generics;
+			N:       positive;
 			format:  std_ulogic_vector(7 downto 0) := uart_8N1;
 			use_cfg: boolean);
 		port (
@@ -80,9 +80,9 @@ package uart_pkg is
 
 	component uart_rx is
 		generic (
-			g:       uart_generics; 
-			N:       positive; 
-			D:       positive; 
+			g:       uart_generics;
+			N:       positive;
+			D:       positive;
 			format:  std_ulogic_vector(7 downto 0) := uart_8N1;
 			use_cfg: boolean);
 		port (
@@ -120,9 +120,9 @@ package uart_pkg is
 
 	component uart_baud is -- Generates a pulse at the sample rate and baud
 		generic (
-			g:    uart_generics; 
-			init: integer; 
-			N:    positive := 16; 
+			g:    uart_generics;
+			init: integer;
+			N:    positive := 16;
 			D:    positive := 3);
 		port (
 			clk:      in std_ulogic;
@@ -790,8 +790,8 @@ use work.uart_pkg.all;
 
 entity uart_tx is
 	generic (
-		g:       uart_generics; 
-		N:       positive; 
+		g:       uart_generics;
+		N:       positive;
 		format:  std_ulogic_vector(7 downto 0) := uart_8N1;
 		use_cfg: boolean);
 	port (
@@ -1019,11 +1019,11 @@ begin
 	rx <= tx when loopback else '0'; -- loop back test
 	uut: work.uart_pkg.uart_top
 		generic map (
-		clock_frequency    => g.clock_frequency, 
-		delay              => g.delay, 
-		asynchronous_reset => g.asynchronous_reset, 
-		baud               => 115200, 
-		format             => uart_8N1, 
+		clock_frequency    => g.clock_frequency,
+		delay              => g.delay,
+		asynchronous_reset => g.asynchronous_reset,
+		baud               => 115200,
+		format             => uart_8N1,
 		fifo_depth         => fifo_depth)
 		port map (
 			clk => clk,

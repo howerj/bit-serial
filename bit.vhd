@@ -305,8 +305,8 @@ begin
 			else
 				f.choice <= EXECUTE after delay;
 			end if;
-		-- INDIRECT is only used instruction allows for indirection 
-		-- (ie. All those instructions in which the top bit is not set). 
+		-- INDIRECT is only used instruction allows for indirection
+		-- (ie. All those instructions in which the top bit is not set).
 		-- The indirection add 2*(N+1) cycles to the instruction so is quite expensive.
 		when INDIRECT =>
 			assert c.cmd(c.cmd'high) = '0' severity error;

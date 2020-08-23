@@ -88,7 +88,7 @@ hitting return.
 	$ make run
 	./bit bit.hex
 	eForth 3.1
-	words 
+	words
 
 Arithmetic in Forth in done using Reverse Polish Notation:
 
@@ -377,8 +377,8 @@ different version made with 7400 series logic gates
 
 * Leros and Lipsi
 
-See <https://github.com/leros-dev/leros>, 
-also <https://github.com/schoeberl/lipsi>, 
+See <https://github.com/leros-dev/leros>,
+also <https://github.com/schoeberl/lipsi>,
 
 # References / Appendix
 

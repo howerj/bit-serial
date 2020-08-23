@@ -34,7 +34,7 @@ meta.1 +order also definitions
    2 constant =cell
 4000 constant size ( 16384 bytes, 8192 cells )
   40 constant =stksz
-  40 constant =buf
+  60 constant =buf
 0008 constant =bksp
 000A constant =lf
 000D constant =cr
@@ -140,9 +140,9 @@ assembler.1 +order also definitions
 : until ?branch ;
 : again branch ;
 : if there 0 ?branch ;
-: skip there 0 branch ;
+: mark there 0 branch ;
 : then begin 2/ over t@ or swap t! ;
-: else skip swap then ;
+: else mark swap then ;
 : while if swap ;
 : repeat branch then ;
 assembler.1 -order
@@ -159,37 +159,27 @@ label: entry
 FFFF tvar set       \ all bits set, -1
   FF tvar low       \ lowest bytes set
    0 tvar <cold>    \ entry point of virtual machine program, set later on
+   0 tvar pwd       \ previous word pointer
+
    0 tvar ip        \ instruction pointer
    0 tvar w         \ working pointer
    0 tvar t         \ temporary register
    0 tvar tos       \ top of stack
    0 tvar h         \ dictionary pointer
-   0 tvar pwd       \ previous word pointer
    0 tvar {state}   \ compiler state
    0 tvar {hld}     \ hold space pointer
-  10 tvar {base}    \ input/output radix, default = 16
-  -1 tvar {dpl}     \ number of places after fraction )
+   0 tvar {base}    \ input/output radix, default = 16
+   0 tvar {dpl}     \ number of places after fraction )
    0 tvar {in}      \ position in query string
    0 tvar {handler} \ throw/catch handler
    0 tvar {last}    \ last defined word
    0 tvar #tib      \ terminal input buffer
 
-label: RSTACK     \ return stack start, grows upwards
-=stksz tallot
-label: VSTACK     \ variable stack *end*, grows downwards
-=stksz tallot
-label: {pad}      \ pad area
-=buf   tallot
-VSTACK =stksz + 2/ dup tvar {sp0} tvar {sp}  \ variable stack pointer
-RSTACK          2/ dup tvar {rp0} tvar {rp}  \ return stack pointer
+ 2000                       dup tvar {sp0} tvar {sp} \ grows downwards
+ 2000 =stksz 2* -           dup tvar {rp0} tvar {rp} \ grows upwards
+ 2000 =stksz 2* - =buf - constant TERMBUF \ pad buffer space
 
-label: TERMBUF
-=buf   tallot
-
-\ 2000                       dup tvar {sp0} tvar {sp} \ grows downwards
-\ 2000 =stksz 2* -           dup tvar {rp0} tvar {rp} \ grows upwards
-\ 2000 =stksz 2* - =buf    - tvar {pad} \ pad buffer space
-\ 2000 =stksz 2* - =buf 2* - constant TERMBUF \ pad buffer space
+TERMBUF =buf + constant =tbufend
 
 : vcell 1 ( cell '1' should contain '1' ) ;
 : -vcell set 2/ ;
@@ -200,7 +190,8 @@ label: TERMBUF
 
 \ ---- ---- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- ---- ----
 
-\ TODO: Implement 'PAUSE', remove need for '0 iGET'
+\ TODO: Implement 'PAUSE' (requires user variables), remove need for
+\ '0 iGET'
 
 label: start
   start call entry t!
@@ -295,7 +286,7 @@ a: opJumpZ
   --sp
   t iLOAD-C
   if
-    ip iLOAD-C 
+    ip iLOAD-C
     1 iADD
   else
     ip iLOAD
@@ -326,12 +317,12 @@ a: opNext
 :m until talign opJumpZ 2/ t, ;m
 :m again talign opJump  2/ t, ;m
 :m if opJumpZ there 0 t, ;m
-:m skip opJump there 0 t, ;m
+:m mark opJump there 0 t, ;m
 :m then there 2/ swap t! ;m
-:m else skip swap then ;m
+:m else mark swap then ;m
 :m while if ;m
 :m repeat swap again then ;m
-:m aft drop skip begin swap ;m
+:m aft drop mark begin swap ;m
 :m next talign opNext 2/ t, ;m
 
 a: bye halt! a;   ( -- : bye bye! )
@@ -524,7 +515,6 @@ a: sp! ( ??? u -- ??? : set stack depth )
   {sp} iSTORE-C
   {sp} iLOAD
   tos iSTORE-C
-  --sp
   a;
 
 a: rp! ( u -- , R: ??? --- ??? : set return stack depth )
@@ -581,9 +571,9 @@ assembler.1 -order
 :to >r r> swap >r >r ;t compile-only
 :to r> r> r> swap >r ;t compile-only
 :to r@ r> r@ swap >r ;t compile-only
-:to 0= 0= ;t 
-:to execute execute ;t 
- 
+:to 0= 0= ;t
+:to execute execute ;t
+
 :t invert #-1 xor ;t
 :t 1+ #1 + ;t
 :t emit ( ch -- :  )
@@ -597,7 +587,6 @@ assembler.1 -order
 :t dpl {dpl} lit ;t    ( -- a : push address of 'dpl' onto the variable stack )
 :t hld {hld} lit ;t    ( -- a : push address of 'hld' onto the variable stack )
 :t bl 20 lit ;t        ( -- space : push a space onto the stack )
-:t pad {pad} lit ;t    ( -- b : push pointer to pad area )
 :t >in {in} lit ;t     ( -- b : push pointer to terminal input position )
 :t hex  $10 lit base ! ;t ( -- : switch to hexadecimal input/output radix )
 :t source TERMBUF lit #tib lit @ ;t ( -- b u )
@@ -706,14 +695,49 @@ assembler.1 -order
     key dup bl - $5F lit u< if ( tap -> ) dup emit over c! 1+ else ktap then
   repeat drop over - ;t
 :t query TERMBUF lit =buf lit accept #tib lit ! drop #0 >in ! ;t ( -- : get line)
-:t ?depth depth 1- > if -4 lit throw then ;t ( u -- : check stack depth )
+:t ?depth depth > if -4 lit throw then ;t ( u -- : check stack depth )
 :t -trailing ( b u -- b u : remove trailing spaces )
   for
     aft bl over r@ + c@ <
       if r> 1+ exit then
     then
   next #0 ;t
-\ This could use refactoring so nothing is hidden.
+
+
+\ :t look ( c-addr1 u1 c xt -- c-addr2 u2 )
+\   >r
+\   begin
+\     over
+\   while
+\     rot dup c@ >r over r> r@ execute
+\     if rot rot drop rdrop exit then
+\     1+ rot rot swap 1- swap
+\   repeat rdrop drop ;t
+\ 
+\ :t skip t' - lit look ;t
+\ :t scan t' = lit look ;t
+\
+\ :t skip ( b u c -- b u )
+\   >r
+\   begin
+\    dup
+\   while
+\    over c@ r@ = if rdrop exit then
+\    +string
+\   repeat
+\   rdrop ;t
+\
+\ :t scan ( b u c -- b u )
+\   >r
+\   begin
+\    dup
+\   while
+\    over c@ r@ xor if rdrop exit then
+\    +string
+\   repeat
+\   rdrop ;t
+
+\ https://comp.lang.forth.narkive.com/W7mTwpgS/a-simple-definition-of-scan-in-standard-forth#post2
 :ht look ( b u c xt -- b u : skip until *xt* test succeeds )
   swap >r rot rot
   begin
@@ -724,10 +748,10 @@ assembler.1 -order
     if rdrop rot drop exit then
     +string
   repeat rdrop rot drop ;t
-:ht no-match if 0> exit then 0= 0= ;t ( n f -- t )
-:ht match no-match invert ;t          ( n f -- t )
+:ht no-match if 0> exit then 0= 0= ;t ( c1 c2 -- t )
+:ht match no-match invert ;t          ( c1 c2 -- t )
 :t parse ( c -- b u ; <string> )
-    >r source drop >in @ + #tib lit @ >in @ - r@ 
+    >r source drop >in @ + #tib lit @ >in @ - r@
     >r over r> swap >r >r
     r@ t' no-match lit look 2dup
     r> t' match    lit look swap r> - >r - r> 1+  ( b u c -- b u delta )
@@ -735,15 +759,15 @@ assembler.1 -order
     r> bl = if -trailing then #0 max ;t
 :t spaces begin dup 0> while space 1- repeat drop ;t ( +n -- )
 :t hold #-1 hld +! hld @ c! ;t ( c -- : save a character in hold space )
-:t #> 2drop hld @ pad =buf lit + over - ;t  ( u -- b u )
+:t #> 2drop hld @ =tbufend lit over - ;t  ( u -- b u )
 :t #  ( d -- d : add next character in number to hold space )
    2 lit ?depth
-   #0 base @ 
+   #0 base @
    ( extract ->) dup >r um/mod r> swap >r um/mod r> rot ( ud ud -- ud u )
    ( digit -> ) 9 lit over < 7 lit and + [char] 0 + ( u -- c )
    hold ;t
 :t #s begin # 2dup ( d0= -> ) or 0= until ;t       ( d -- 0 )
-:t <# pad =buf lit + hld ! ;t                      ( -- )
+:t <# =tbufend lit hld ! ;t                        ( -- )
 :t sign 0< if [char] - hold then ;t                ( n -- )
 :t u.r >r #0 <# #s #>  r> over - spaces type ;t    ( u +n -- : print u right justified by +n )
 :t u.  #0 <# #s #> space type ;t                   ( u -- : print unsigned number )
@@ -783,7 +807,7 @@ assembler.1 -order
       if rdrop nip nip exit then
     then
   next 2drop #0 ;t
-:t .s depth 1- for aft r@ pick . then next ;t ( -- : print variable stack )
+:t .s depth  for aft r@ pick . then next ;t ( -- : print variable stack )
 :t nfa cell+ ;t ( pwd -- nfa : move word pointer to name field )
 :t cfa nfa dup c@ $1F lit and + cell+ 2 lit negate and ;t ( pwd -- cfa )
 :t (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0: find word in WID )
@@ -811,7 +835,7 @@ assembler.1 -order
       0> if cfa execute exit then \ <- immediate word are executed
       cfa compile, exit           \ <- compiling word are...compiled.
     then
-    drop 
+    drop
     dup nfa c@ 20 lit and if -E lit throw then ( <- ?compile )
     cfa execute exit  \ <- if its not, execute it, then exit *interpreter*
   then
@@ -846,7 +870,7 @@ assembler.1 -order
 :to next =next lit , 2/ , ;t immediate compile-only
 :to ' bl word find ?found cfa literal ;t immediate
 :t compile r> dup 2* @ , 1+ >r ;t compile-only ( -- : compile next compiled into dictionary )
-:to exit compile exit ;t immediate compile-only 
+:to exit compile exit ;t immediate compile-only
 :to ." compile .$  [char] " word count + h lit ! align ;t immediate compile-only
 :to $" compile ($) [char] " word count + h lit ! align ;t immediate compile-only  \ "
 :to ( [char] ) parse 2drop ;t immediate ( "comment" -- discard until parenthesis )
@@ -860,7 +884,7 @@ assembler.1 -order
     +string
   repeat 2drop ;t
 :t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( "word" -- )
-:t prequit hex postpone [ #0 >in ! #0 ;t ( -- )
+:t prequit hex postpone [ #0 >in ! #-1 dpl ! ;t ( -- )
 :t quit ( -- : interpreter loop [and more, does more than most QUITs] )
    there t2/ <cold> t! \ program entry point set here
    ." eForth 3.1" cr

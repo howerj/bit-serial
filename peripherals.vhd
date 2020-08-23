@@ -85,10 +85,10 @@ begin
 
 	uart: entity work.uart_top
 		generic map (
-			clock_frequency    => g.clock_frequency, 
-			delay              => g.delay, 
-			asynchronous_reset => g.asynchronous_reset, 
-			baud               => baud, 
+			clock_frequency    => g.clock_frequency,
+			delay              => g.delay,
+			asynchronous_reset => g.asynchronous_reset,
+			baud               => baud,
 			fifo_depth         => uart_fifo_depth,
 			use_cfg            => uart_use_cfg)
 		port map(

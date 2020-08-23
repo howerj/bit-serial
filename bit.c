@@ -72,8 +72,8 @@ static void sleep_us(unsigned long microseconds) {
 	nanosleep(&ts, NULL);
 }
 
-static void os_sleep_ms(bcpu_t *b, unsigned ms) { 
-	assert(b); 
+static void os_sleep_ms(bcpu_t *b, unsigned ms) {
+	assert(b);
 	sleep_us(ms * 1000ul);
 }
 
@@ -85,6 +85,7 @@ static int os_kbhit(bcpu_t *b) {
 	struct termios oldattr, newattr;
 	if (os_term_change(fd, &oldattr, &newattr) < 0)
 		return -1;
+	/* TODO: Fix this */
 	sleep_us(1000); /* bit of a hack */
 	int bytes = 0;
 	ioctl(fd, FIONREAD, &bytes);

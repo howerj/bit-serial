@@ -3,17 +3,25 @@
  * AUTHOR:  Richard James Howe
  * EMAIL:   howe.r.j.89@gmail.com
  * GIT:     https://github.com/howerj/bit-serial */
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
+#ifdef __unix__
+#include <sys/select.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
+#define __USE_POSIX199309
+#define _POSIX_C_SOURCE 199309L
+#endif
 #include <assert.h>
-#include <string.h>
-#include <stdarg.h>
 #include <limits.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #define MSIZE       (8192u)
 #define ESCAPE      (27)
-#define SLEEP_EVERY (1024ul*1024ul)
 
 typedef uint16_t mw_t; /* machine word */
 
@@ -21,52 +29,25 @@ typedef struct {
 	mw_t pc, acc, flg, m[MSIZE];
 	FILE *in, *out;
 	mw_t ch, leds, switches;
-	int done, sleep_ms;
+	long done, sleep_ms, sleep_every;
+#ifdef __unix__
+	struct termios oldattr; /* ugly, but needed for Unix only */
+#endif
 } bcpu_t;
 
 enum { fCy, fZ, fNg, fR, fHLT, };
 
 #ifdef __unix__ /* unix junk... */
-#include <sys/select.h>
-#include <sys/ioctl.h>
-#include <termios.h>
-#include <unistd.h>
-#define __USE_POSIX199309
-#define _POSIX_C_SOURCE 199309L
-#include <time.h>
-
-static int os_term_change(const int fd, struct termios *oldattr, struct termios *newattr) {
-	if (tcgetattr(fd, oldattr) < 0)
-		return -1;
-	*newattr = *oldattr;
-	newattr->c_iflag &= ~(ICRNL);
-	newattr->c_lflag &= ~(ICANON | ECHO);
-	if (tcsetattr(fd, TCSANOW, newattr) < 0)
-		return -2;
-	return 0;
-}
-
-static int os_term_restore(const int fd, struct termios *oldattr) {
-	return tcsetattr(fd, TCSANOW, oldattr) < 0 ? -2 : 0;
-}
+extern int fileno(FILE *file);
 
 static int os_getch(bcpu_t *b) {
 	assert(b);
-	const int fd = STDIN_FILENO;
-	struct termios oldattr, newattr;
-	if (!isatty(fd))
-		return fgetc(stdin);
-	if (os_term_change(fd, &oldattr, &newattr) < 0)
-		return -1;
-	const int ch = getchar();
-	if (os_term_restore(fd, &oldattr) < 0)
-		return -2;
-	return ch;
+	return fgetc(b->in);
 }
 
-static void sleep_us(unsigned long microseconds) {
+static void sleep_us(const unsigned long microseconds) {
 	struct timespec ts = {
-		.tv_sec  = microseconds / 1000000ul,
+		.tv_sec  = (microseconds / 1000000ul),
 		.tv_nsec = (microseconds % 1000000ul) * 1000ul,
 	};
 	nanosleep(&ts, NULL);
@@ -82,35 +63,54 @@ static int os_kbhit(bcpu_t *b) {
 	const int fd = STDIN_FILENO;
 	if (!isatty(fd))
 		return 1;
-	struct termios oldattr, newattr;
-	if (os_term_change(fd, &oldattr, &newattr) < 0)
-		return -1;
-	/* TODO: Fix this */
-	sleep_us(1000); /* bit of a hack */
 	int bytes = 0;
 	ioctl(fd, FIONREAD, &bytes);
-	if (os_term_restore(fd, &oldattr) < 0)
-		return -2;
 	return !!bytes;
+}
+
+static int os_init(bcpu_t *b) {
+	assert(b);
+	const int fd = fileno(b->in);
+	if (!isatty(fd))
+		return 0;
+	if (tcgetattr(fd, &b->oldattr) < 0)
+		return -1;
+	struct termios newattr = b->oldattr;
+	newattr.c_iflag &= ~(ICRNL);
+	newattr.c_lflag &= ~(ICANON | ECHO);
+	if (tcsetattr(fd, TCSANOW, &newattr) < 0)
+		return -2;
+	return 0;
+}
+
+static int os_deinit(bcpu_t *b) {
+	assert(b);
+	if (!isatty(fileno(b->in)))
+		return 0;
+	return tcsetattr(fileno(b->in), TCSANOW, &b->oldattr) < 0 ? -1 : 0;
 }
 #else
 #ifdef _WIN32
 #include <windows.h>
 extern int getch(void);
 extern int kbhit(void);
-static int os_getch(bcpu_t *b) { assert(b); return getch(); }
+static int os_getch(bcpu_t *b) { assert(b); return b->in == stdin ? getch() : fgetc(b->in); }
 static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); }
 static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); Sleep(ms); }
+static int os_init(bcpu_t *b) { assert(b); return 0; }
+static int os_deinit(bcpu_t *b) { assert(b); return 0; }
 #else
 static int os_kbhit(bcpu_t *b) { assert(b); return 1; }
-static int os_getch(bcpu_t *b) { assert(b); return getchar(); }
+static int os_getch(bcpu_t *b) { assert(b); return fgetc(b->in); }
 static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); (void)ms; }
+static int os_init(bcpu_t *b) { assert(b); return 0; }
+static int os_deinit(bcpu_t *b) { assert(b); return 0; }
 #endif
 #endif /** __unix__ **/
 
 static int wrap_getch(bcpu_t *b) {
 	assert(b);
-	const int ch = b->in ? fgetc(b->in) : os_getch(b);
+	const int ch = os_getch(b);
 	if ((ch == ESCAPE) || (ch < 0))
 		b->done = 1;
 	return ch;
@@ -118,9 +118,8 @@ static int wrap_getch(bcpu_t *b) {
 
 static int wrap_putch(bcpu_t *b, const int ch) {
 	assert(b);
-	FILE *out = b->out ? b->out : stdout;
-	const int r = fputc(ch, out);
-	if (fflush(out) < 0)
+	const int r = fputc(ch, b->out);
+	if (fflush(b->out) < 0)
 		return -1;
 	return r;
 }
@@ -181,7 +180,7 @@ static int bcpu(bcpu_t *b) {
 	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
 
 	for (unsigned count = 0; b->done == 0; count++) {
-		if ((count % SLEEP_EVERY) == 0 && b->sleep_ms > 0)
+		if ((b->sleep_every && (count % b->sleep_every) == 0) && b->sleep_ms > 0)
 			os_sleep_ms(b, b->sleep_ms);
 
 		const mw_t instr = m[pc % MSIZE];
@@ -191,7 +190,7 @@ static int bcpu(bcpu_t *b) {
 		if (flg & (1u << fHLT))
 			goto halt;
 		if (flg & (1u << fR)) {
-			pc = 0;
+			pc  = 0;
 			acc = 0;
 			flg = 0;
 			continue;
@@ -235,11 +234,11 @@ halt:
 }
 
 int main(int argc, char **argv) {
-	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, };
+	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, .sleep_every = 64 * 1024 };
 	if (argc != 2)
 		return 1;
-	setbuf(stdin,  NULL);
-	setbuf(stdout, NULL);
+	b.in  = stdin;
+	b.out = stdout;
 	FILE *in = fopen(argv[1], "rb");
 	if (!in)
 		return 2;
@@ -249,6 +248,13 @@ int main(int argc, char **argv) {
 			break;
 		b.m[i] = pc;
 	}
-	return bcpu(&b) < 0 ? 3 : 0;
+	if (os_init(&b) < 0)
+		return 3;
+	setbuf(stdin,  NULL);
+	setbuf(stdout, NULL);
+	const int r = bcpu(&b) < 0 ? 4 : 0;
+	if (os_deinit(&b) < 0)
+		return 5;
+	return r;
 }
 

@@ -308,6 +308,11 @@ begin
 		-- INDIRECT is only used instruction allows for indirection
 		-- (ie. All those instructions in which the top bit is not set).
 		-- The indirection add 2*(N+1) cycles to the instruction so is quite expensive.
+		--
+		-- We could avoid having this state and CPU functionality if we were to
+		-- make use of self-modifying code, however that would make programming the CPU
+		-- more difficult.
+		--
 		when INDIRECT =>
 			assert c.cmd(c.cmd'high) = '0' severity error;
 			f.choice <= EXECUTE after delay;

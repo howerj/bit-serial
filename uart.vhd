@@ -161,7 +161,7 @@ package uart_pkg is
 			rx_fifo_empty: out std_ulogic;
 			rx_fifo_re:     in std_ulogic;
 			rx_fifo_data:  out std_ulogic_vector(7 downto 0);
-	
+
 			reg:             in std_ulogic_vector(15 downto 0);
 			clock_reg_tx_we: in std_ulogic;
 			clock_reg_rx_we: in std_ulogic;
@@ -532,7 +532,7 @@ entity uart_baud is
 	port (
 		clk:     in std_ulogic;
 		rst:     in std_ulogic;
-	
+
 		we:      in std_ulogic;
 		cnt:     in std_ulogic_vector(N - 1 downto 0);
 		cr:      in std_ulogic := '0';

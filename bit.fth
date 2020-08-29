@@ -193,14 +193,6 @@ TERMBUF =buf + constant =tbufend
 
 \ ---- ---- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- ---- ----
 
-\ TODO: Implement 'PAUSE' (requires user variables), remove need for
-\ '0 iGET' (requires a Virtual Machine reimplementation), and document system.
-\ We could also use self-modifying code to remove the need for indirection.
-\
-\ For PAUSE, consult <https://www.bradrodriguez.com/papers/mtasking.html>, it
-\ might also be worth back-porting this to <https://github.com/howerj/forth-cpu>
-\
-
 label: start
   start call entry t!
   {sp0} iLOAD-C {sp} iSTORE-C
@@ -687,47 +679,11 @@ assembler.1 -order
       if r> 1+ exit then
     then
   next #0 ;t
-
-\ :t look ( c-addr1 u1 c xt -- c-addr2 u2 )
-\   >r
-\   begin
-\     over
-\   while
-\     rot dup c@ >r over r> r@ execute
-\     if rot rot drop rdrop exit then
-\     1+ rot rot swap 1- swap
-\   repeat rdrop drop ;t
-\
-\ :t skip t' - lit look ;t
-\ :t scan t' = lit look ;t
-\
-\ :t skip ( b u c -- b u )
-\   >r
-\   begin
-\    dup
-\   while
-\    over c@ r@ = if rdrop exit then
-\    +string
-\   repeat
-\   rdrop ;t
-\
-\ :t scan ( b u c -- b u )
-\   >r
-\   begin
-\    dup
-\   while
-\    over c@ r@ xor if rdrop exit then
-\    +string
-\   repeat
-\   rdrop ;t
-
-\ https://comp.lang.forth.narkive.com/W7mTwpgS/a-simple-definition-of-scan-in-standard-forth#post2
 :ht look ( b u c xt -- b u : skip until *xt* test succeeds )
   swap >r rot rot
   begin
     dup
   while
-    \ TODO: remove special case of bl?
     over c@ r@ - r@ bl = 4 lit pick execute
     if rdrop rot drop exit then
     +string
@@ -864,13 +820,6 @@ assembler.1 -order
 :to \ source drop @ >in ! ;t immediate  ( "comment" -- discard until end of line )
 :to immediate last nfa @ $40 lit or last nfa ! ;t ( -- : turn previously defined word into an immediate one )
 :to dump begin over c@ u. +string ?dup 0= until drop ;t
-\ :to dump ( a u -- : dump a section memory )
-\   cr #0 >r begin dup while
-\     over c@
-\     2 lit u.r space
-\     r> 1+ dup >r F lit and 0= if cr then
-\     +string
-\   repeat 2drop rdrop ;t
 :t eval begin bl word dup c@ while interpret #1 ?depth repeat drop ."  ok" cr ;t ( "word" -- )
 :t ini hex postpone [ #0 >in ! #-1 dpl ! ;t ( -- )
 :t quit ( -- : interpreter loop [and more, does more than most QUITs] )

@@ -24,7 +24,6 @@ entity bcpu is
 		N:                  positive   := 16;     -- size the CPU, minimum is 8
 		parity:             std_ulogic := '0';    -- set parity (even = '0'/odd = '1') of parity flag
 		jumpz:              std_ulogic := '1';    -- jump on zero = '1', jump on non-zero = '0'
-		indirection:        boolean    := true;   -- if true, indirection is on instruction is turned on.
 		debug:              natural    := 0);     -- debug level, 0 = off
 	port (
 		clk, rst:       in std_ulogic;
@@ -45,11 +44,8 @@ architecture rtl of bcpu is
 	constant Cy:  integer :=  0; -- Carry; set by addition
 	constant Z:   integer :=  1; -- Accumulator is zero
 	constant Ng:  integer :=  2; -- Accumulator is negative
-	constant PAR: integer :=  3; -- Parity of accumulator
-	constant ROT: integer :=  4; -- Use rotate instead of shift
-	constant R:   integer :=  5; -- Reset CPU
-	constant IND: integer :=  6; -- Indirect
-	constant HLT: integer :=  7; -- Halt CPU
+	constant R:   integer :=  3; -- Reset CPU
+	constant HLT: integer :=  4; -- Halt CPU
 
 	type registers_t is record
 		state:  state_t;    -- state machine register
@@ -151,10 +147,7 @@ architecture rtl of bcpu is
 				write(ll, yn(c.flags(Cy),  'C'));
 				write(ll, yn(c.flags(Z),   'Z'));
 				write(ll, yn(c.flags(Ng),  'N'));
-				write(ll, yn(c.flags(PAR), 'P'));
-				write(ll, yn(c.flags(ROT), 'S'));
 				write(ll, yn(c.flags(R),   'R'));
-				write(ll, yn(c.flags(IND), 'I'));
 				write(ll, yn(c.flags(HLT), 'H'));
 				writeline(OUTPUT, ll);
 			end if;
@@ -247,11 +240,9 @@ begin
 			-- 'indirection allowed on instruction' bit from the highest
 			-- bit to a lower bit so we can perform the state decision before
 			-- the bit is being processed.
-			if c.flags(IND) = '1' and indirection then
-				if i = '0' and c.state = FETCH then
-					f.indir <= true;
-					f.state <= INDIRECT; -- Override FETCH Choice!
-				end if;
+			if i = '0' and c.state = FETCH then
+				f.indir <= true;
+				f.state <= INDIRECT; -- Override FETCH Choice!
 			end if;
 		elsif last4 = '1' then
 			f.last4 <= true after delay;
@@ -288,14 +279,12 @@ begin
 				f.first      <= false  after delay;
 				f.indir      <= false  after delay;
 				f.flags(Z)   <= '1'    after delay;
-				f.flags(PAR) <= parity after delay;
 			else
 				ie           <= '1' after delay;
 
 				if c.acc(0) = '1' then -- determine flag status before EXECUTE
 					f.flags(Z) <= '0' after delay;
 				end if;
-				f.flags(PAR) <= c.acc(0) xor c.flags(PAR) after delay;
 				f.acc <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 
 				if not c.last4 then
@@ -316,12 +305,16 @@ begin
 			else
 				f.choice <= EXECUTE after delay;
 			end if;
-		-- INDIRECT is only used when we have c.flags(IND) set and the
-		-- instruction allows for indirection (ie. All those instructions in which
-		-- the top bit is not set). The indirection add 2*(N+1) cycles to
-		-- the instruction so is quite expensive.
+		-- INDIRECT is only used instruction allows for indirection
+		-- (ie. All those instructions in which the top bit is not set).
+		-- The indirection add 2*(N+1) cycles to the instruction so is quite expensive.
+		--
+		-- We could avoid having this state and CPU functionality if we were to
+		-- make use of self-modifying code, however that would make programming the CPU
+		-- more difficult.
+		--
 		when INDIRECT =>
-			assert c.flags(IND) = '1' and c.cmd(c.cmd'high) = '0' severity error;
+			assert c.cmd(c.cmd'high) = '0' severity error;
 			f.choice <= EXECUTE after delay;
 			if c.first then
 				f.dline(0)  <= '1'   after delay;
@@ -352,6 +345,7 @@ begin
 			if c.first then
 				f.dline(0)  <= '1'   after delay;
 				f.first     <= false after delay;
+				if cmd = iADD then f.flags(Cy) <= '0' after delay; end if;
 				-- 'tcarry' is added to the program counter in the ADVANCE
 				-- state, instructions that affect the program counter clear
 				-- it (such as iJUMP, and iJUMPZ/iSET (conditionally).
@@ -385,17 +379,11 @@ begin
 				when iLSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
-						if c.flags(ROT) = '1' then
-							f.acc  <= c.acc(c.acc'high - 1 downto 0) & c.acc(0) after delay;
-						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 				when iRSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= "0" & c.acc(c.acc'high downto 1) after delay;
-						if c.flags(ROT) = '1' then
-							f.acc  <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
-						end if;
 					end if;
 					f.op   <= "0" & c.op (c.op'high downto 1) after delay;
 				-- We have two sets of LOAD/STORE instructions, one set which
@@ -463,7 +451,7 @@ begin
 						-- NB. We could set the address directly here and
 						-- go to FETCH but that costs us too much time and gates.
 						f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
-						f.tcarry  <= '0' after delay;
+						f.tcarry <= '0' after delay;
 					else
 						f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
 					end if;

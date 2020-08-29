@@ -3,16 +3,25 @@
  * AUTHOR:  Richard James Howe
  * EMAIL:   howe.r.j.89@gmail.com
  * GIT:     https://github.com/howerj/bit-serial */
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
+#ifdef __unix__
+#include <sys/select.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
+#define __USE_POSIX199309
+#define _POSIX_C_SOURCE 199309L
+#endif
 #include <assert.h>
-#include <string.h>
-#include <stdarg.h>
 #include <limits.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
-#define MSIZE     (4096u)
-#define ESCAPE    (27)
+#define MSIZE       (8192u)
+#define ESCAPE      (27)
 
 typedef uint16_t mw_t; /* machine word */
 
@@ -20,45 +29,88 @@ typedef struct {
 	mw_t pc, acc, flg, m[MSIZE];
 	FILE *in, *out;
 	mw_t ch, leds, switches;
-	int done;
+	long done, sleep_ms, sleep_every;
+#ifdef __unix__
+	struct termios oldattr; /* ugly, but needed for Unix only */
+#endif
 } bcpu_t;
 
-enum { fCy, fZ, fNg, fPAR, fROT, fR, fIND, fHLT, };
+enum { fCy, fZ, fNg, fR, fHLT, };
 
-#ifdef __unix__
-#include <unistd.h>
-#include <termios.h>
-static int getch(void) {
+#ifdef __unix__ /* unix junk... */
+extern int fileno(FILE *file);
+
+static int os_getch(bcpu_t *b) {
+	assert(b);
+	return fgetc(b->in);
+}
+
+static void sleep_us(const unsigned long microseconds) {
+	struct timespec ts = {
+		.tv_sec  = (microseconds / 1000000ul),
+		.tv_nsec = (microseconds % 1000000ul) * 1000ul,
+	};
+	nanosleep(&ts, NULL);
+}
+
+static void os_sleep_ms(bcpu_t *b, unsigned ms) {
+	assert(b);
+	sleep_us(ms * 1000ul);
+}
+
+static int os_kbhit(bcpu_t *b) {
+	assert(b);
 	const int fd = STDIN_FILENO;
-	struct termios oldattr, newattr;
 	if (!isatty(fd))
-		return fgetc(stdin);
-	if (tcgetattr(fd, &oldattr) < 0)
-		return -2;
-	newattr = oldattr;
+		return 1;
+	int bytes = 0;
+	ioctl(fd, FIONREAD, &bytes);
+	return !!bytes;
+}
+
+static int os_init(bcpu_t *b) {
+	assert(b);
+	const int fd = fileno(b->in);
+	if (!isatty(fd))
+		return 0;
+	if (tcgetattr(fd, &b->oldattr) < 0)
+		return -1;
+	struct termios newattr = b->oldattr;
 	newattr.c_iflag &= ~(ICRNL);
 	newattr.c_lflag &= ~(ICANON | ECHO);
 	if (tcsetattr(fd, TCSANOW, &newattr) < 0)
 		return -2;
-	const int ch = getchar();
-	if (tcsetattr(fd, TCSANOW, &oldattr) < 0)
-		return -2;
-	return ch;
+	return 0;
 }
 
+static int os_deinit(bcpu_t *b) {
+	assert(b);
+	if (!isatty(fileno(b->in)))
+		return 0;
+	return tcsetattr(fileno(b->in), TCSANOW, &b->oldattr) < 0 ? -1 : 0;
+}
 #else
 #ifdef _WIN32
+#include <windows.h>
 extern int getch(void);
-extern int putch(int c);
+extern int kbhit(void);
+static int os_getch(bcpu_t *b) { assert(b); return b->in == stdin ? getch() : fgetc(b->in); }
+static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); }
+static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); Sleep(ms); }
+static int os_init(bcpu_t *b) { assert(b); return 0; }
+static int os_deinit(bcpu_t *b) { assert(b); return 0; }
 #else
-static int getch(void) { return getchar(); }
-static int putch(const int c) { return putchar(c); }
+static int os_kbhit(bcpu_t *b) { assert(b); return 1; }
+static int os_getch(bcpu_t *b) { assert(b); return fgetc(b->in); }
+static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); (void)ms; }
+static int os_init(bcpu_t *b) { assert(b); return 0; }
+static int os_deinit(bcpu_t *b) { assert(b); return 0; }
 #endif
 #endif /** __unix__ **/
 
 static int wrap_getch(bcpu_t *b) {
 	assert(b);
-	const int ch = b->in ? fgetc(b->in) : getch();
+	const int ch = os_getch(b);
 	if ((ch == ESCAPE) || (ch < 0))
 		b->done = 1;
 	return ch;
@@ -66,9 +118,8 @@ static int wrap_getch(bcpu_t *b) {
 
 static int wrap_putch(bcpu_t *b, const int ch) {
 	assert(b);
-	FILE *out = b->out ? b->out : stdout;
-	const int r = fputc(ch, out);
-	if (fflush(out) < 0)
+	const int r = fputc(ch, b->out);
+	if (fflush(b->out) < 0)
 		return -1;
 	return r;
 }
@@ -79,55 +130,29 @@ static inline unsigned bits(unsigned b) {
 	return r;
 }
 
-static inline mw_t rotl(const mw_t value, unsigned shift) {
-	shift &= (sizeof(value) * CHAR_BIT) - 1u;
-	if (!shift)
-		return value;
-	return (value << shift) | (value >> ((sizeof(value) * CHAR_BIT) - shift));
-}
-
-static inline mw_t rotr(const mw_t value, unsigned shift) {
-	shift &= (sizeof(value) * CHAR_BIT) - 1u;
-	if (!shift)
-		return value;
-	return (value >> shift) | (value << ((sizeof(value) * CHAR_BIT) - shift));
-}
-
-static inline mw_t shiftl(const int type, const mw_t value, unsigned shift) {
-	return type ? rotl(value, shift) : value << shift;
-}
-
-static inline mw_t shiftr(const int type, const mw_t value, unsigned shift) {
-	return type ? rotr(value, shift) : value >> shift;
-}
-
 static inline mw_t add(mw_t a, mw_t b, mw_t *carry) {
 	assert(carry);
-	const mw_t parry = !!(*carry & 1u);
-	const mw_t r = a + b + parry;
+	const mw_t r = a + b;
 	*carry &= ~(1u << fCy);
-	if (r < (a + parry) && r < (b + parry))
+	if (r < a && r < b)
 		*carry |= (1u << fCy);
 	return r;
 }
 
 static inline mw_t bload(bcpu_t *b, mw_t addr) {
 	assert(b);
-	if (!(0x8000ul & addr)) {
-		if (addr >= MSIZE)
-			return 0;
+	if (!(0x4000ul & addr))
 		return b->m[addr % MSIZE];
-	}
 	switch (addr & 0x7) {
 	case 0: return b->switches;
-	case 1: return (1u << 11u) | (b->ch & 0xFF);
+	case 1: return (!os_kbhit(b) << 8ul) | (b->ch & 0xFF);
 	}
 	return 0;
 }
 
 static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	assert(b);
-	if (!(0x8000ul & addr)) {
+	if (!(0x4000ul & addr)) {
 		if (addr >= MSIZE)
 			return;
 		b->m[addr % MSIZE] = val;
@@ -153,40 +178,39 @@ static int bcpu(bcpu_t *b) {
 	assert(b);
 	int r = 0;
 	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
-       	unsigned count = 0;
-	flg |= (1u << fZ);
 
-	for (;b->done == 0; count++) {
+	for (unsigned count = 0; b->done == 0; count++) {
+		if ((b->sleep_every && (count % b->sleep_every) == 0) && b->sleep_ms > 0)
+			os_sleep_ms(b, b->sleep_ms);
+
 		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
-		const int rot    = !!(flg & (1u << fROT));
+
 		if (flg & (1u << fHLT))
 			goto halt;
 		if (flg & (1u << fR)) {
-			pc = 0;
+			pc  = 0;
 			acc = 0;
 			flg = 0;
 			continue;
 		}
-		flg &= ~((1u << fZ) | (1u << fNg) | (1u << fPAR));
+
+		flg &= ~((1u << fZ) | (1u << fNg));
 		flg |= ((!acc) << fZ);              /* set zero flag     */
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
-		flg &= ~(1u << fPAR);               /* clear parity flag */
-		flg |= ((bits(acc) & 1u)) << fPAR;  /* set parity flag   */
 
-		const int loadit = !(cmd & 0x8) && (flg & (1u << fIND));
-		const mw_t lop = loadit ? bload(b, op1) : op1;
+		const mw_t lop = (cmd & 0x8) ? op1 : bload(b, op1);
 
 		pc++;
 		switch (cmd) {
 		case 0x0: acc |= lop;                                 break; /* OR      */
-		case 0x1: acc &= ((loadit ? 0: 0xF000) | lop);        break; /* AND     */
+		case 0x1: acc &= lop;                                 break; /* AND     */
 		case 0x2: acc ^= lop;                                 break; /* XOR     */
 		case 0x3: acc = add(acc, lop, &flg);                  break; /* ADD     */
 
-		case 0x4: acc = shiftl(rot, acc, bits(lop));          break; /* LSHIFT  */
-		case 0x5: acc = shiftr(rot, acc, bits(lop));          break; /* RSHIFT  */
+		case 0x4: acc <<= bits(lop);                          break; /* LSHIFT  */
+		case 0x5: acc >>= bits(lop);                          break; /* RSHIFT  */
 		case 0x6: acc = bload(b, lop);                        break; /* LOAD    */
 		case 0x7: bstore(b, lop, acc);                        break; /* STORE   */
 
@@ -210,9 +234,11 @@ halt:
 }
 
 int main(int argc, char **argv) {
-	static bcpu_t b = { .in = NULL };
+	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, .sleep_every = 64 * 1024 };
 	if (argc != 2)
 		return 1;
+	b.in  = stdin;
+	b.out = stdout;
 	FILE *in = fopen(argv[1], "rb");
 	if (!in)
 		return 2;
@@ -222,6 +248,13 @@ int main(int argc, char **argv) {
 			break;
 		b.m[i] = pc;
 	}
-	return bcpu(&b) < 0 ? 3 : 0;
+	if (os_init(&b) < 0)
+		return 3;
+	setbuf(stdin,  NULL);
+	setbuf(stdout, NULL);
+	const int r = bcpu(&b) < 0 ? 4 : 0;
+	if (os_deinit(&b) < 0)
+		return 5;
+	return r;
 }
 

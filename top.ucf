@@ -84,7 +84,7 @@ Net "tx"    LOC = N18 | IOSTANDARD = LVCMOS33 | SLEW = FAST; # uart tx
 
 ##JA
 #Net "JA<0>" LOC = T12 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L19P, Sch name = JA1
-#Net "JA<1>" LOC = V12 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L19N, Sch name = JA2 
+#Net "JA<1>" LOC = V12 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L19N, Sch name = JA2
 #Net "JA<2>" LOC = N10 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L20P, Sch name = JA3
 #Net "JA<3>" LOC = P11 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L20N, Sch name = JA4
 #Net "JA<4>" LOC = M10 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L22P, Sch name = JA7

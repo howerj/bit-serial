@@ -18,7 +18,8 @@ entity peripherals is
 		baud:             positive;
 		W:                positive;
 		N:                positive;
-		use_uart_fifo:    boolean);
+		uart_fifo_depth:  natural;
+		uart_use_cfg:     boolean);
 	port (
 		clk:         in std_ulogic;
 		rst:         in std_ulogic;
@@ -74,7 +75,7 @@ architecture rtl of peripherals is
 
 	signal io_addr: std_ulogic_vector(2 downto 0);
 begin
-	io           <= c.r_a(c.r_a'high) = '1' and ae = '0' after g.delay;
+	io           <= c.r_a(c.r_a'high - 1) = '1' and ae = '0' after g.delay;
 	io_addr      <= c.r_a(io_addr'range) after g.delay;
 	write        <= true when (c.r_ie and (c.r_ie xor f.r_ie)) = '1' else false after g.delay;
 	ld           <= c.r_ld                    after g.delay;
@@ -83,7 +84,13 @@ begin
 	reg          <= c.r_i(reg'range)          after g.delay;
 
 	uart: entity work.uart_top
-		generic map (g => g, baud => baud, use_fifo => use_uart_fifo)
+		generic map (
+			clock_frequency    => g.clock_frequency,
+			delay              => g.delay,
+			asynchronous_reset => g.asynchronous_reset,
+			baud               => baud,
+			fifo_depth         => uart_fifo_depth,
+			use_cfg            => uart_use_cfg)
 		port map(
 			clk => clk, rst => rst,
 
@@ -114,7 +121,7 @@ begin
 		port map (
 			clk  => clk,
 			dwe  => dwe,
-			addr => f.r_a(f.r_a'high - 4 downto 0),
+			addr => f.r_a(addr_length - 1 downto 0),
 			dre  => dre,
 			din  => f.r_i,
 			dout => dout);
@@ -182,9 +189,9 @@ begin
 				when "000" => f.r_ld <= c.r_i(c.r_ld'range) after g.delay;
 				when "001" =>	tx_fifo_we <= c.r_i(13) after g.delay;
 						rx_fifo_re <= c.r_i(10) after g.delay;
-				when "010" => clock_reg_tx_we <= '1' after g.delay;
-				when "011" => clock_reg_rx_we <= '1' after g.delay;
-				when "100" => control_reg_we  <= '1' after g.delay;
+				when "010" => if uart_use_cfg then clock_reg_tx_we <= '1' after g.delay; end if;
+				when "011" => if uart_use_cfg then clock_reg_rx_we <= '1' after g.delay; end if;
+				when "100" => if uart_use_cfg then control_reg_we  <= '1' after g.delay; end if;
 				when "101" =>
 				when "110" =>
 				when "111" =>

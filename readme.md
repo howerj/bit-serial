@@ -70,6 +70,40 @@ This turns this 'readme.md' file into a HTML file.
 
 Cleans up the project.
 
+# eForth
+
+The tool-chain for the device is used to build an image for a Forth
+interpreter, more specifically a Forth interpreter similar to a dialect of
+Forth known as 'eForth', it differs between eForth in order to save on space
+which is at a premium. You should be greeted with an eForth prompt when running
+the 'make run' target that looks something like this:
+
+	$ make run
+	./bit bit.hex
+	eForth 3.1
+
+You can see all of the defined words (or functions) by typing in 'words' and
+hitting return.
+
+	$ make run
+	./bit bit.hex
+	eForth 3.1
+	words
+
+Arithmetic in Forth in done using Reverse Polish Notation:
+
+	2 2 + . cr
+
+Will print out '4'. This is not the place for a Forth tutorial, the Forth
+interpreter is mainly here to demonstrate that the bit-serial CPU is working
+correctly and can be used for useful purposes. No demonstration would be
+complete without a 'Hello, World' program, however:
+
+	: hello cr ." Hello, World!" ;
+	hello
+
+Go use your favorite search engine to find a Forth tutorial.
+
 # Use Case
 
 Often in an [FPGA][] design there is spare Dual Port Block RAM (BRAM) available,
@@ -138,9 +172,9 @@ The instructions are:
 	| Instruction | C Operation                            | Description                       | Cycles           |
 	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
 	| OR          | acc |= lop                             | Bitwise Or                        | [3 or 5]*(N+1)   |
-	| AND         | acc &= indir ? lop : 0xF000 | lop      | Bitwise And                       | [3 or 5]*(N+1)   |
+	| AND         | acc &= lop                             | Bitwise And                       | [3 or 5]*(N+1)   |
 	| XOR         | acc ^= lop                             | Bitwise Exclusive Or              | [3 or 5]*(N+1)   |
-	| ADD         | acc += lop + carry;                    | Add with carry, sets carry        | [3 or 5]*(N+1)   |
+	| ADD         | acc += lop                             | Add with carry, sets carry        | [3 or 5]*(N+1)   |
 	| LSHIFT      | acc = acc << lop (or rotate left)      | Shift left or Rotate left         | [3 or 5]*(N+1)   |
 	| RSHIFT      | acc = acc >> lop (or rotate right)     | Shift right or Rotate right       | [3 or 5]*(N+1)   |
 	| LOAD        | acc = memory(lop)                      | Load                              | [4 or 6]*(N+1)   |
@@ -164,9 +198,6 @@ The instructions are:
 * flg   = flags register
 * N     = bit width, which is 16.
 
-Notice that the when the indirect flag is *not* set that the top bits will be
-anded with '0xF' and not '0x0'.
-
 The number of cycles an instruction takes to complete depends on whether it
 performs an indirection, or in the case of GET/SET it depends if it it setting
 the program counter (2 cycles only) or the flags register (3 cycles), or performing
@@ -181,11 +212,8 @@ The flags in the 'flg' register are:
 	| Cy   |  0  | Carry flag, set by addition instruction |
 	| Z    |  1  | Zero flag                               |
 	| Ng   |  2  | Negative flag                           |
-	| PAR  |  3  | Parity flag, parity of accumulator      |
-	| ROT  |  4  | If set, shifts become rotates           |
-	| R    |  5  | Reset Flag - Resets the CPU             |
-	| IND  |  6  | Indirect Flag - turns indirection on    |
-	| HLT  |  7  | Halt Flag - Stops the CPU               |
+	| R    |  3  | Reset Flag - Resets the CPU             |
+	| HLT  |  4  | Halt Flag - Stops the CPU               |
 	| ---- | --- | --------------------------------------- |
 
 * The carry flag (Cy) is set by the ADD instruction, it can also be set and cleared
@@ -193,14 +221,8 @@ with the GET/SET instructions.
 * 'Z' is set whenever the accumulator is zero.
 * 'Ng' is set whenever the accumulator has its highest bit set, indicating that
   the accumulator is negative.
-* 'PAR' is the parity of the accumulator, the parity flag can be compiled at
-synthesis time to even or odd parity.
-* 'ROT', if set, means the 'LSHIFT' and 'RSHIFT' instructions will perform
-rotations instead of left/right shifts.
 * 'R', Reset flag, this resets the CPU immediately, only the HLT flag takes
 precedence.
-* 'IND', The indirect flag, which enables indirection on those instructions
-which can be indirected.
 * 'HLT', The halt flag takes priority over everything else, sending the CPU
 into a halt state.
 
@@ -228,12 +250,14 @@ peripherals.
 	| ------- | -------------- |
 	| Address | Name           |
 	| ------- | -------------- |
-	| 0x8000  | LED/Switches   |
-	| 0x8001  | UART TX/RX     |
-	| 0x8002  | UART Clock TX  |
-	| 0x8003  | UART Clock RX  |
-	| 0x8004  | UART Control   |
+	| 0x4000  | LED/Switches   |
+	| 0x4001  | UART TX/RX     |
+	| 0x4002  | UART Clock TX* |
+	| 0x4003  | UART Clock RX* |
+	| 0x4004  | UART Control*  |
 	| ------- | -------------- |
+	These registers are turned off by default
+	and will need to be enabled during synthesis.
 
 * LED/Switches
 
@@ -350,6 +374,11 @@ CPU, and roughly the same size (although a direct comparison is difficult).
 It can address less memory (1K) without bank-switching. There is also a
 different version made with 7400 series logic gates
 <https://www.bigmessowires.com/nibbler/>.
+
+* Leros and Lipsi
+
+See <https://github.com/leros-dev/leros>,
+also <https://github.com/schoeberl/lipsi>,
 
 # References / Appendix
 

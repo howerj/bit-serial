@@ -31,7 +31,11 @@ provided in case you do not have access to it, called '[bit.hex][]', this hex fi
 contains a working [Forth][] image. To run this:
 
 	make bit
-	./bit bit.conf bit.hex
+	./bit bit.hex
+
+An example session of the simulator running is:
+
+![C Simulator Running eForth](bit-sim.gif)
 
 You should be greeted by a [Forth][] prompt, type 'words' and hit a carriage
 return to get a list of defined functions.
@@ -235,6 +239,15 @@ enable is used to communicate with the outside world.
 The internal state of the CPU is minimal, to make a working system the memory
 and I/O controller will need (shift) registers to store the address and
 input/output.
+
+The CPU state-machine is:
+
+![CPU State Machine](bit-state.png)
+
+And the CPU bus timing diagram:
+
+![CPU Bus timing](bit-wave.png)
+
 
 # Peripherals
 

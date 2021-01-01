@@ -60,7 +60,7 @@ static void os_sleep_ms(bcpu_t *b, unsigned ms) {
 
 static int os_kbhit(bcpu_t *b) {
 	assert(b);
-	const int fd = STDIN_FILENO;
+	const int fd = fileno(b->in);
 	if (!isatty(fd))
 		return 1;
 	int bytes = 0;
@@ -95,7 +95,7 @@ static int os_deinit(bcpu_t *b) {
 extern int getch(void);
 extern int kbhit(void);
 static int os_getch(bcpu_t *b) { assert(b); return b->in == stdin ? getch() : fgetc(b->in); }
-static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); }
+static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); } /* WTF? */
 static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); Sleep(ms); }
 static int os_init(bcpu_t *b) { assert(b); return 0; }
 static int os_deinit(bcpu_t *b) { assert(b); return 0; }

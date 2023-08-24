@@ -1,6 +1,7 @@
 -- File:        bit.vhd
 -- Author:      Richard James Howe
 -- Repository:  https://github.com/howerj/bit-serial
+-- Email:       howe.r.j.89@gmail.com
 -- License:     MIT
 -- Description: An N-bit, simple and small bit serial CPU
 
@@ -10,7 +11,7 @@ use ieee.numeric_std.all;
 use std.textio.all; -- for debug only, not needed for synthesis
 
 -- The bit-serial CPU itself, the interface is bit-serial as well as the
--- CPU itself, address and data are N bits wide. The enable lines are held
+-- CPU, address and data are N bits wide. The enable lines are held
 -- high for N cycles when data is clocked in or out, and a complete read or
 -- write consists of N cycles (although those cycles may not be contiguous,
 -- it is up to the BCPU). The three enable lines are mutually exclusive,
@@ -21,8 +22,7 @@ entity bcpu is
 	generic (
 		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false
 		delay:              time       := 0 ns;   -- simulation only, gate delay
-		N:                  positive   := 16;     -- size the CPU, minimum is 8
-		parity:             std_ulogic := '0';    -- set parity (even = '0'/odd = '1') of parity flag
+		N:                  positive   := 16;     -- size of the CPU, minimum is 8
 		jumpz:              std_ulogic := '1';    -- jump on zero = '1', jump on non-zero = '0'
 		debug:              natural    := 0);     -- debug level, 0 = off
 	port (
@@ -85,7 +85,7 @@ architecture rtl of bcpu is
 
 	-- 'adder' implements a full adder, which is all we need to implement
 	-- N-bit addition in a bit serial architecture. It is used in the instruction
-	-- and to increment the program counter.
+	-- "iADD" and to increment the program counter.
 	procedure adder (x, y, cin: in std_ulogic; signal sum, cout: out std_ulogic) is
 	begin
 		sum  <= x xor y xor cin after delay;
@@ -105,7 +105,7 @@ architecture rtl of bcpu is
 		return count;
 	end function;
 
-	-- Obviously this does not synthesis, which is why synthesis is turned
+	-- Obviously this does not synthesize, which is why synthesis is turned
 	-- off for the body of this function, it does make debugging much easier
 	-- though, we will be able to see which instructions are executed and do so
 	-- by name.
@@ -165,12 +165,14 @@ begin
 	assert not (ie = '1' and ae = '1') report "input whilst changing address"  severity failure;
 	assert not (oe = '1' and ae = '1') report "output whilst changing address" severity failure;
 
-	adder (add1, add2, acin, ares, acout);                 -- shared adder
+	adder (add1, add2, acin, ares, acout);           -- shared adder
 	cmd   <= cmd_t'val(to_integer(unsigned(c.cmd))); -- used for debug purposes
 	last4 <= c.dline(c.dline'high - 4) after delay;  -- processing last four bits?
 	last  <= c.dline(c.dline'high)     after delay;  -- processing last bit?
 
 	process (clk, rst) begin
+		-- Most variables are not reset here, instead only the delay line
+		-- needs to be and the state-machine, making the reset smaller and simpler.
 		if rst = '1' and asynchronous_reset then
 			c.dline <= (others => '0') after delay; -- parallel reset!
 			c.state <= RESET after delay;
@@ -210,7 +212,8 @@ begin
 		f       <= c after delay;
 		f.dline <= c.dline(c.dline'high - 1 downto 0) & "0" after delay;
 
-		-- Our delay line should only contain zero on one bit at a time
+		-- The delay line should contain zero bits or one bit only, depending
+		-- on the systems state.
 		if c.first then
 			assert bit_count(c.dline) = 0 report "too many dline bits";
 		else
@@ -305,13 +308,15 @@ begin
 			else
 				f.choice <= EXECUTE after delay;
 			end if;
-		-- INDIRECT is only used instruction allows for indirection
-		-- (ie. All those instructions in which the top bit is not set).
+		-- INDIRECT is only used for instructions that allow for indirection
+		-- (i.e. All those instructions in which the top bit is not set).
 		-- The indirection add 2*(N+1) cycles to the instruction so is quite expensive.
 		--
 		-- We could avoid having this state and CPU functionality if we were to
 		-- make use of self-modifying code, however that would make programming the CPU
-		-- more difficult.
+		-- more difficult. (N.B As of 2023, The project <https://github.com/howerj/subleq>
+		-- makes heavy use of self modifying code to bring a Forth interpreter to a
+		-- single instruction set computer (SUBLEQ), it is not too difficult).
 		--
 		when INDIRECT =>
 			assert c.cmd(c.cmd'high) = '0' severity error;
@@ -442,7 +447,7 @@ begin
 						f.pc   <= c.op(0) & c.pc(c.pc'high downto 1) after delay;
 						f.choice <= FETCH after delay;
 					end if;
-				-- NB. We could probably eliminate these instructions by mapping
+				-- N.B. We could probably eliminate these instructions by mapping
 				-- the registers into the memory address space, this would free
 				-- up another two instructions, and potentially simplify the CPU.
 				--
@@ -491,7 +496,8 @@ begin
 		-- ADVANCE reuses our adder in iADD to add one to the program counter
 		-- this state *is* reached when we do a iJUMP, iJUMPZ or an iSET on the
 		-- program counter, those instructions clear the 'tcarry', which is
-		-- normally '1'.
+		-- normally '1'. A possible speed optimization would be to avoid this 
+		-- state, but this may require more floor space on the FPGA.
 		when ADVANCE =>
 			f.choice <= FETCH after delay;
 			if c.first then
@@ -509,6 +515,7 @@ begin
 				f.tcarry        <= acout after delay;
 				ae   <= '1' after delay;
 			end if;
+		-- STOP, for it is the time of Hammers.
 		when HALT => stop <= '1' after delay;
 		end case;
 	end process;

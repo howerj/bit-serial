@@ -2,7 +2,7 @@
 
 *  Project:   Bit-Serial CPU in VHDL
 *  Author:    Richard James Howe
-*  Copyright: 2019,2020 Richard James Howe
+*  Copyright: 2019,2020,2023 Richard James Howe
 *  License:   MIT
 *  Email:     howe.r.j.89@gmail.com
 *  Website:   <https://github.com/howerj/bit-serial>
@@ -19,8 +19,12 @@ CPU. This allows the CPU itself to be a lot smaller, the penalty is that it is
 The CPU is incredibly basic, lacking features required to support
 higher level programming (such as function calls). Instead such features can
 be emulated if they are needed. If such features are needed, or faster
-throughput (whilst still remaining quite small) other [Soft-Core][] CPUs are
-available, such as the [H2][].
+throughput is needed (whilst still remaining quite small) 
+other [Soft-Core][] CPUs are available, such as the [H2][].
+
+The CPU also lacks interrupts, traps, byte addressability and load/storing,
+a Memory Management Unit or Memory Protection Unit, and a whole host of
+other features that are in a modern core.
 
 To build and run the C based simulator for the project, you will need a C
 compiler and 'make'. To build and run the [VHDL][] simulator, you will need [GHDL][]
@@ -37,7 +41,7 @@ An example session of the simulator running is:
 
 ![C Simulator Running eForth](bit-sim.gif)
 
-You should be greeted by a [Forth][] prompt, type 'words' and hit a carriage
+You should be greeted by a [Forth][] prompt, type 'words' and hit carriage
 return to get a list of defined functions.
 
 The target [FPGA][] that the system is built for is a [Spartan-6][], for a
@@ -108,6 +112,14 @@ complete without a 'Hello, World' program, however:
 
 Go use your favorite search engine to find a Forth tutorial.
 
+A more advance eForth image exists for the
+[SUBLEQ](https://github.com/howerj/subleq) Single Instruction Set Computer,
+another contender for a small CPU that could be implemented on an [FPGA][]
+(or in [7400 series ICs](https://en.wikipedia.org/wiki/7400-series_integrated_circuits)).
+It would need porting to this system, which should not be too difficult, and
+includes multitasking, a text editor, better numeric I/O, more control
+structures, and is a much more well rounded Forth.
+
 # Use Case
 
 Often in an [FPGA][] design there is spare Dual Port Block RAM (BRAM) available,
@@ -127,7 +139,7 @@ In short, the project may be useful if:
 There were two use cases that the author had in mind when setting out to build
 this system:
 
-* As a CPU driving a low-baud UART
+* As a CPU driving a low-baud UART.
 * As a controller for a VT100 terminal emulator that would control cursor
   position and parse escape codes, setting colors and attributes in a hardware
   based text-terminal (this was to replace an existing VHDL only system that
@@ -152,16 +164,17 @@ performed.
 
 # CPU Specification
 
-The CPU is a 16-bit design, in principle a normal bit parallel CPU design could
-be implemented of the same CPU, but in practice you not end up with a CPU like
-this one if you remove the bit-serial restriction.
+The CPU is a 16-bit design, in principle a normal bit parallel implementation
+of the CPU could be made, but in practice if you want a bit-parallel CPU
+you would not make a CPU with the same instruction set and behavior if the
+bit-serial restriction is lifted.
 
 The CPU has 16 operation, each instruction consists of a 4-bit operation field
-and a 12-bit operand. Depending on the CPU mode that operand and instruction
-that operand can either be a literal or an address to load a 16-bit word from
-(addresses are word and not byte oriented, so the lowest bit of an address
-specifies the next word not byte). Only the first 8 operations can have their
-operand indirected, which is deliberate.
+and a 12-bit operand. Depending on the CPU mode that operand can either be a 
+literal or an address to load a 16-bit word from (addresses are word and 
+not byte oriented, so the lowest bit of an address specifies the next word 
+not byte). Only the first 8 operations can have their operand indirected, 
+which is deliberate.
 
 The CPU is an accumulator machine, all instructions either modify or use the
 accumulator to store operation results in them. The CPU has three registers
@@ -172,38 +185,39 @@ counter only) and a flags register.
 
 The instructions are:
 
-	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
-	| Instruction | C Operation                            | Description                       | Cycles           |
-	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
-	| OR          | acc |= lop                             | Bitwise Or                        | [3 or 5]*(N+1)   |
-	| AND         | acc &= lop                             | Bitwise And                       | [3 or 5]*(N+1)   |
-	| XOR         | acc ^= lop                             | Bitwise Exclusive Or              | [3 or 5]*(N+1)   |
-	| ADD         | acc += lop                             | Add with carry, sets carry        | [3 or 5]*(N+1)   |
-	| LSHIFT      | acc = acc << lop (or rotate left)      | Shift left or Rotate left         | [3 or 5]*(N+1)   |
-	| RSHIFT      | acc = acc >> lop (or rotate right)     | Shift right or Rotate right       | [3 or 5]*(N+1)   |
-	| LOAD        | acc = memory(lop)                      | Load                              | [4 or 6]*(N+1)   |
-	| STORE       | memory(lop) = acc                      | Store                             | [4 or 6]*(N+1)   |
-	| LOADC       | acc = memory(op)                       | Load from memory constant addr    | 4*(N+1)          |
-	| STOREC      | memory(op) = acc                       | Store to memory constant addr     | 4*(N+1)          |
-	| LITERAL     | acc = op                               | Load literal into accumulator     | 3*(N+1)          |
-	| UNUSED      | N/A                                    | Unused instruction                | 3*(N+1)          |
-	| JUMP        | pc = op                                | Unconditional Jump                | 2*(N+1)          |
-	| JUMPZ       | if(!acc){pc = op }                     | Jump If Zero                      | [2 or 3]*(N+1)   |
-	| SET         | if(op&1){flg=acc}else{pc=acc}          | Set Register                      | 3*(N+1)          |
-	| GET         | if(op&1){acc=flg}else{acc=pc}          | Get Register                      | 3*(N+1)          |
-	| ----------- | -------------------------------------- | --------------------------------- | ---------------- |
+	| ----------- | ----------------------------- | ------------------------------ | -------------- |
+	| Instruction | C Operation                   | Description                    | Cycles         |
+	| ----------- | ----------------------------- | ------------------------------ | -------------- |
+	| OR          | acc |= lop                    | Bitwise Or                     | [3 or 5]*(N+1) |
+	| AND         | acc &= lop                    | Bitwise And                    | [3 or 5]*(N+1) |
+	| XOR         | acc ^= lop                    | Bitwise Exclusive Or           | [3 or 5]*(N+1) |
+	| ADD         | acc += lop                    | Add with carry, sets carry     | [3 or 5]*(N+1) |
+	| LSHIFT      | acc = acc << bits(lop)        | Shift left or Rotate left      | [3 or 5]*(N+1) |
+	| RSHIFT      | acc = acc >> bits(lop)        | Shift right or Rotate right    | [3 or 5]*(N+1) |
+	| LOAD        | acc = memory(lop)             | Load                           | [4 or 6]*(N+1) |
+	| STORE       | memory(lop) = acc             | Store                          | [4 or 6]*(N+1) |
+	| LOADC       | acc = memory(op)              | Load from memory constant addr | 4*(N+1)        |
+	| STOREC      | memory(op) = acc              | Store to memory constant addr  | 4*(N+1)        |
+	| LITERAL     | acc = op                      | Load literal into accumulator  | 3*(N+1)        |
+	| UNUSED      | N/A                           | Unused instruction             | 3*(N+1)        |
+	| JUMP        | pc = op                       | Unconditional Jump             | 2*(N+1)        |
+	| JUMPZ       | if(!acc){pc = op }            | Jump If Zero                   | [2 or 3]*(N+1) |
+	| SET         | if(op&1){flg=acc}else{pc=acc} | Set Register                   | 3*(N+1)        |
+	| GET         | if(op&1){acc=flg}else{acc=pc} | Get Register                   | 3*(N+1)        |
+	| ----------- | ----------------------------- | ------------------------------ | -------------- |
 
-* pc    = program counter
-* acc   = accumulator
-* indir = indirect flag
-* lop   = instruction operand if indirect flag not set, otherwise it equals to the memory
-          location pointed to by the operand
-* op    = instruction operand
-* flg   = flags register
-* N     = bit width, which is 16.
+* pc     = program counter
+* acc    = accumulator
+* indir  = indirect flag
+* lop    = instruction operand if indirect flag not set, otherwise it equals to the memory
+           location pointed to by the operand
+* op     = instruction operand
+* flg    = flags register
+* N      = bit width, which is 16.
+* bits() = count of bits, population count
 
 The number of cycles an instruction takes to complete depends on whether it
-performs an indirection, or in the case of GET/SET it depends if it it setting
+performs an indirection, or in the case of GET/SET it depends if it is setting
 the program counter (2 cycles only) or the flags register (3 cycles), or performing
 an I/O operation (4 cycles), getting the flags or program counter always costs
 3 cycles.
@@ -231,10 +245,10 @@ precedence.
 into a halt state.
 
 There is really not much else to this CPU from the point of view of a user of
-this core, integrating this core into another system is more complicated
-however, you will need to be far more aware of timing of signals and their
-enable lines. Much like the processor, a single bit bus in conjunction with an
-enable is used to communicate with the outside world.
+this core, it is a simple CPU. Integrating this core into another system is 
+more complicated however, you will need to be far more aware of timing of 
+signals and their enable lines. Much like the processor, a single bit bus 
+in conjunction with an enable is used to communicate with the outside world.
 
 The internal state of the CPU is minimal, to make a working system the memory
 and I/O controller will need (shift) registers to store the address and
@@ -253,7 +267,8 @@ And the CPU bus timing diagram:
 
 The system has a minimal set of peripherals; a bank of switches with LEDs next
 to each switch and a UART capable of transmission and reception, other
-peripherals could be added as needed.
+peripherals could be added as needed. A timer would be useful, but not
+necessary, the same could be said for many other peripherals.
 
 ## Register Map
 
@@ -373,6 +388,18 @@ assembler. See <https://github.com/howerj/forth-cpu>.
 
 This CPU core has deeper stacks, more instructions, and interrupts, which the
 original J1 core lacks. It is also written in VHDL instead of Verilog.
+
+* SUBLEQ system.
+
+The One/Single Instruction Set Computer (OISC) based off of [SUBLEQ][] is another
+candidate for making a small, niche, CPU. There are many OISC architectures,
+[SUBLEQ][] is the most popular. Although I have not made a SUBLEQ CPU for
+an FPGA (it should be relatively straightforward to do so, and possible to
+make one in discrete 7400 series IC with some EEPROM and RAM chips) I have
+managed to port a Forth interpreter to a simulated 16-bit SUBLEQ CPU, see
+<https://github.com/howerj/subleq>. Other people have made SUBLEQ CPUs 
+on FPGAs (which are not compatible with that SUBLEQ eForth image as they use 
+the wrong width for the address and/or data lines).
 
 * Tiny CPU in a CPLD
 
@@ -536,6 +563,7 @@ That's all folks!
 [bit.hex]: bit.hex
 [bit.vhd]: bit.vhd
 [gforth]: https://gforth.org/
+[SUBLEQ]: https://en.wikipedia.org/wiki/One-instruction_set_computer#Subtract_and_branch_if_not_equal_to_zero
 
 <style type="text/css">
 	body{

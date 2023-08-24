@@ -1,3 +1,7 @@
+\ Author: Richard James Howe
+\ Email: howe.r.j.89@gmail.com
+\ Repo: https://github.com/howerj/bit-serial
+\ License: MIT
 \
 \ Cross Compiler and eForth interpreter for the bit-serial CPU available at:
 \
@@ -14,6 +18,12 @@
 \ - <https://github.com/samawati/j1eforth>
 \ - <https://www.bradrodriguez.com/papers/>
 \ - 8086 eForth 1.0 by Bill Muench and C. H. Ting, 1990
+\
+\ For a more feature complete eForth see:
+\
+\ - <https://github.com/howerj/subleq>
+\
+\ Which targets an even more constrained system.
 \
 \ The cross compiler has been tested and works with gforth versions 0.7.0 and
 \ 0.7.3. An already compiled image (called 'bit.hex') should be available if

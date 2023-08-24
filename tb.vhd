@@ -1,6 +1,7 @@
 -- File:        tb.vhd
 -- Author:      Richard James Howe
 -- Repository:  https://github.com/howerj/bit-serial
+-- Email:       howe.r.j.89@gmail.com
 -- License:     MIT
 -- Description: Test bench for top level entity
 

@@ -1,9 +1,12 @@
 -- File:        util.vhd
 -- Author:      Richard James Howe
 -- Repository:  https://github.com/howerj/bit-serial
+-- Email:       howe.r.j.89@gmail.com
 -- License:     MIT
+--
 -- Description: Utility module, mostly taken from another project
 -- of mine, <https://github.com/howerj/forth-cpu>.
+--
 
 library ieee, work;
 use ieee.std_logic_1164.all;

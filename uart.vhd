@@ -1,5 +1,6 @@
 -- FILE:      uart.vhd
 -- BRIEF:     UART TX/RX module
+-- EMAIL:     howe.r.j.89@gmail.com
 -- LICENSE:   MIT
 -- COPYRIGHT: Richard James Howe (2019, 2020)
 --
@@ -30,8 +31,9 @@
 -- bits can be sampled with a higher frequency than the bit rate.
 --
 -- Some notes:
+--
 -- * We can transmit from an 8-bit UART to a less than 8-bit UART fine, so
--- long as parity is not used, as
+-- long as parity is not used (just set the high bits to 1).
 -- * Certain UARTs have the ability to transmit a BREAK signal by holding
 -- the line low for a period greater than the packet length. We can transmit
 -- that by lowering the baud rate and transmitting all zeroes. Receiving a

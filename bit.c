@@ -1,8 +1,8 @@
-/* Bit-Serial CPU simulator
- * LICENSE: MIT
+/* PROJECT: Bit-Serial CPU simulator
  * AUTHOR:  Richard James Howe
  * EMAIL:   howe.r.j.89@gmail.com
- * GIT:     https://github.com/howerj/bit-serial */
+ * REPO:    https://github.com/howerj/bit-serial
+ * LICENSE: MIT */
 #ifdef __unix__
 #include <sys/select.h>
 #include <sys/ioctl.h>
@@ -234,9 +234,11 @@ halt:
 }
 
 int main(int argc, char **argv) {
-	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, .sleep_every = 64 * 1024 };
-	if (argc != 2)
+	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, .sleep_every = 64 * 1024, };
+	if (argc != 2) {
+		(void)fprintf(stderr, "Usage: %s prog.hex\n", argv[0]);
 		return 1;
+	}
 	b.in  = stdin;
 	b.out = stdout;
 	FILE *in = fopen(argv[1], "rb");

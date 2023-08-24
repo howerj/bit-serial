@@ -1,6 +1,7 @@
 -- File:        top.vhd
 -- Author:      Richard James Howe
 -- Repository:  https://github.com/howerj/bit-serial
+-- Email:       howe.r.j.89@gmail.com
 -- License:     MIT
 -- Description: Top level entity; Bit Serial CPU
 
@@ -15,8 +16,8 @@ entity top is
 		file_name:       string          := "bit.hex";
 		N:               positive        := 16;
 		baud:            positive        := 115200;
-		debug:           natural         := 0; -- will not synthesize if greater than zero (debug off)
-		uart_use_cfg:   boolean          := false;
+		debug:           natural         := 0; -- will not synthesize if greater than zero (debug off = 0)
+		uart_use_cfg:    boolean         := false;
 		uart_fifo_depth: natural         := 0
 	);
 	port (

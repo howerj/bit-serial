@@ -493,7 +493,7 @@ begin
 				ie    <= '1' after delay;
 				f.acc <= i & c.acc(c.acc'high downto 1) after delay;
 			end if;
-		-- ADVANCE reuses our adder in iADD to add one to the program counter
+		-- ADVANCE reuses our adder in iADD to add one to the program counter,
 		-- this state *is* reached when we do a iJUMP, iJUMPZ or an iSET on the
 		-- program counter, those instructions clear the 'tcarry', which is
 		-- normally '1'. A possible speed optimization would be to avoid this 

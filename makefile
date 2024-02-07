@@ -5,12 +5,15 @@ BAUD?=115200
 DIFF?=vimdiff
 #BAUD?=9600
 
-.PHONY: all run diff simulation viewer clean documentation
+.PHONY: all run diff simulation viewer clean documentation test
 
 all: bit simulation
 
 run: bit bit.hex
 	./bit bit.hex
+
+test: bit bit.hex test.fth
+	./bit bit.hex < test.fth
 
 talk:
 	picocom --omap delbs -e b -b ${BAUD} ${USB}

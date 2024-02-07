@@ -139,12 +139,12 @@ In short, the project may be useful if:
 There were two use cases that the author had in mind when setting out to build
 this system:
 
-* As a CPU driving a low-baud UART.
+* As a CPU driving a software defined low-baud UART.
 * As a controller for a VT100 terminal emulator that would control cursor
   position and parse escape codes, setting colors and attributes in a hardware
   based text-terminal (this was to replace an existing VHDL only system that
   had spare capacity in the FPGAs dual-port block RAMs used to store the Font
-  and text).
+  and text in <https://github.com/howerj/forth-cpu>).
 
 # Tool-chain
 

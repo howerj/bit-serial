@@ -18,6 +18,13 @@ use std.textio.all; -- for debug only, not needed for synthesis
 -- only one will be active at any time.
 --
 -- There are a few configurable items, but the defaults should work fine.
+--
+-- Bit serial CPUs are quite slow, nonetheless there are quite a few
+-- optimizations that could be done to reduce the number of cycles needed
+-- to execute certain instructions and perhaps even changes to CPU behavior
+-- and instructions themselves. It should not be thought that this design
+-- is optimal, it is quite small however.
+--
 entity bcpu is
 	generic (
 		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false
@@ -26,11 +33,11 @@ entity bcpu is
 		jumpz:              std_ulogic := '1';    -- jump on zero = '1', jump on non-zero = '0'
 		debug:              natural    := 0);     -- debug level, 0 = off
 	port (
-		clk, rst:       in std_ulogic;
-		i:              in std_ulogic;
-		o, a:          out std_ulogic;
-		oe, ie, ae: buffer std_ulogic;
-		stop:          out std_ulogic);
+		clk, rst:       in std_ulogic; -- clock line and synchronous/asynchronous reset
+		i:              in std_ulogic; -- 'i' = input line
+		o, a:          out std_ulogic; -- 'o' = output line, 'a' = address line
+		oe, ie, ae: buffer std_ulogic; -- 'oe' = output enable, 'ie' = input enable, 'ae' = address enable
+		stop:          out std_ulogic); -- CPU halted
 end;
 
 architecture rtl of bcpu is
@@ -41,6 +48,8 @@ architecture rtl of bcpu is
 		iLOADC,  iSTOREC, iLITERAL, iUNUSED,
 		iJUMP,   iJUMPZ,  iSET,     iGET);
 
+	-- A parity flag could be added if needed as it is
+	-- easy to calculate. 
 	constant Cy:  integer :=  0; -- Carry; set by addition
 	constant Z:   integer :=  1; -- Accumulator is zero
 	constant Ng:  integer :=  2; -- Accumulator is negative
@@ -378,9 +387,10 @@ begin
 					f.acc(f.acc'high) <= ares after delay;
 					f.flags(Cy) <= acout after delay;
 				-- A barrel shifter is usually quite an expensive piece of hardware,
-				-- but it ends up being quite cheap for obvious reasons. If we really
-				-- needed to we could dispense with the right shift, we could mask off
-				-- low bits and rotate (either way) to emulate it.
+				-- but it ends up being quite cheap for obvious reasons. We could
+				-- dispense with both shifts and have a rotate (either left or right)
+				-- by number of bits sets, this is conjunction with an "iAND" instruction
+				-- to mask off bits is all we really would need.
 				when iLSHIFT =>
 					if c.op(0) = '1' then
 						f.acc  <= c.acc(c.acc'high - 1 downto 0) & "0" after delay;
@@ -428,6 +438,7 @@ begin
 				-- * Arithmetic Right Shift
 				-- * Subtraction
 				-- * Swap Low/High Byte (may be difficult to implement)
+				-- * Increment or decrement (for simulating stacks)
 				--
 				-- However, this instruction may not have its indirection bit set,
 				-- This would not be a problem for the swap instruction. Alternatively

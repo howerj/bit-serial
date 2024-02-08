@@ -209,7 +209,7 @@ The instructions are:
 * pc     = program counter
 * acc    = accumulator
 * indir  = indirect flag
-* lop    = instruction operand if indirect flag not set, otherwise it equals to the memory
+* lop    = instruction operand if indirect flag not set, otherwise it is set to the memory
            location pointed to by the operand
 * op     = instruction operand
 * flg    = flags register

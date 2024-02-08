@@ -19,7 +19,6 @@
 \ - <https://github.com/samawati/j1eforth>
 \ - <https://www.bradrodriguez.com/papers/>
 \ - <https://github.com/howerj/subleq>
-\
 \ - 8086 eForth 1.0 by Bill Muench and C. H. Ting, 1990
 \
 \ For a more feature complete eForth see:
@@ -30,12 +29,16 @@
 \ a more featureful Forth (it has USER variables, multitasking,
 \ a system vocabulary, image checksum, optional components such 
 \ as floating points and memory allocation and lots of 
-\ documentation, a better decompiler) and is self-hosting.
+\ documentation, a better decompiler, a "self-interpreter", a
+\ block editor and block system, sleep, more control words,
+\ and much more) and is self-hosting.
 \
 \ The cross compiler has been tested and works with gforth 
 \ versions 0.7.0 and 0.7.3. An already compiled image (called 
 \ 'bit.hex') should be available if you do not have gforth 
 \ installed.
+\
+\ The threading model could be changed to save on space.
 \
 
 only forth also definitions hex
@@ -121,7 +124,7 @@ size =cell - tep !
 :m label: get-current >r meta.1 set-current 
           create r> set-current there ,    does> @ ;m
 :m tdown =cell negate and ;m
-:m tnfa =cell + ;m ( pwd -- nfa : move to name field address)
+:m tnfa =cell + ;m ( pwd -- nfa : move to name field address )
 :m tcfa tnfa dup c@ $1F and + =cell + tdown ;m ( pwd -- cfa )
 :m compile-only tlast @ tnfa t@ $20 or tlast @ tnfa t! ;m
 :m immediate    tlast @ tnfa t@ $40 or tlast @ tnfa t! ;m
@@ -183,11 +186,10 @@ label: entry ( previous three instructions are irrelevant )
 0 t,  \ entry point to virtual machine
 
 FFFF tvar set       \ all bits set, -1
-  FF tvar low       \ lowest bytes set
+  FF tvar low       \ lowest 8-bits set
    0 tvar <cold>    \ entry point of virtual machine, set later
 
    0 tvar ip        \ instruction pointer
-   0 tvar w         \ working pointer
    0 tvar t         \ temporary register
    0 tvar tos       \ top of stack
    0 tvar h         \ dictionary pointer
@@ -224,22 +226,42 @@ label: start
   \ -- fall-through --
 label: vm ( The Forth virtual machine )
   ip iLOAD-C
-  w iSTORE-C
+  t iSTORE-C
   ( ip iLOAD-C already in accm. ) 1 iADD ip iSTORE-C
-  w iLOAD-C
+  t iLOAD-C
   0 iSET \ jump to next token
 
+:m a: ( "name" -- : assembly only routine, no header )
+  CAFED00D
+  target.1 +order also definitions
+  create talign there ,
+  assembler.1 +order
+  does> @ branch ;m
+:m (a); CAFED00D <> if abort" unstructured" then 
+  assembler.1 -order ;m
+:m a; (a); vm branch ;m
+
+a: execute ( xt -- : execute an execution token! )
+  tos iLOAD-C
+  t iSTORE-C
+  {sp} iLOAD
+  tos iSTORE-C
+  --sp
+  t iLOAD-C
+  1 iRSHIFT
+  (a); ( fall-through to {nest} )
 ( fn call: accumulator must contain '0 iGET' prior to call )
 label: {nest} 
-  w iSTORE-C ( store '0 iGET' into working pointer )
+  t iSTORE-C ( store '0 iGET' into working pointer )
   ++rp
   ip iLOAD-C
   {rp} iSTORE
-  w iLOAD-C
+  t iLOAD-C
   2 iADD
   ip iSTORE-C
   vm branch
 
+a: exit ( -- : exit from current function ) 
 label: {unnest} ( return from function call )
   {rp} iLOAD
   t iSTORE-C
@@ -247,6 +269,7 @@ label: {unnest} ( return from function call )
   t iLOAD-C
   ip iSTORE-C
   vm branch
+  (a); 
 
 :m nest 0 iGET {nest} branch ;m
 :m unnest {unnest} branch ;m
@@ -278,18 +301,6 @@ label: {unnest} ( return from function call )
 :m ;t CAFEBABE <> if abort" unstructured" then 
   talign unnest target.only.1 -order ;
 
-:m a: ( "name" -- : assembly only routine, no header )
-  CAFED00D
-  target.1 +order also definitions
-  create talign there ,
-  assembler.1 +order
-  does> @ branch ;m
-:m (a); CAFED00D <> if abort" unstructured" then 
-  assembler.1 -order ;m
-:m a; (a); vm branch ;m
-
-label: IncIp ip iLOAD-C 1 iADD ip iSTORE-C vm branch
-label: decSp tos iSTORE-C --sp vm branch
 
 a: opPush ( pushes next value in instr stream to the stack )
   ++sp
@@ -299,14 +310,8 @@ a: opPush ( pushes next value in instr stream to the stack )
   t iSTORE-C
   t iLOAD
   tos iSTORE-C
-  IncIp branch
+label: IncIp ip iLOAD-C 1 iADD ip iSTORE-C vm branch
   (a);
-
-a: opJump ( jump to next value in instruction stream )
-label: Jump
-  ip iLOAD
-  ip iSTORE-C
-  a;
 
 a: opJumpZ
   tos iLOAD-C
@@ -318,8 +323,12 @@ a: opJumpZ
   if
     IncIp branch
   then
-  Jump branch
-  (a);
+  (a); ( fall-through to opJump )
+a: opJump ( jump to next value in instruction stream )
+label: Jump ( A few instructions jump here to save space )
+  ip iLOAD
+  ip iSTORE-C
+  a;
 
 a: opNext
   {rp} iLOAD
@@ -350,25 +359,12 @@ a: opNext
 :m aft drop mark begin swap ;m
 :m next talign opNext 2/ t, ;m
 
-a: bye halt! a;   ( -- : bye bye! )
-a: exit unnest a; ( -- : exit from current function )
-
-a: lls ( u shift -- u : shift left by number of bits set )
-  {sp} iLOAD
-  tos 2/ iLSHIFT
-  decSp branch
-  (a);
-
-a: lrs ( u shift -- u : shift right by number of bits set )
-  {sp} iLOAD
-  tos 2/ iRSHIFT
-  decSp branch
-  (a);
+a: bye halt! (a);   ( -- : bye bye! )
 
 a: and ( u u -- u : bit wise AND )
   {sp} iLOAD
   tos 2/ iAND
-  decSp branch
+label: decSp tos iSTORE-C --sp vm branch
   (a);
 
 a: or ( u u -- u : bit wise OR )
@@ -383,9 +379,15 @@ a: xor ( u u -- u : bit wise XOR )
   decSp branch
   (a);
 
-a: + ( u u -- u : Plain old addition )
+a: lls ( u shift -- u : shift left by number of bits set )
   {sp} iLOAD
-  tos 2/ iADD
+  tos 2/ iLSHIFT
+  decSp branch
+  (a);
+
+a: lrs ( u shift -- u : shift right by number of bits set )
+  {sp} iLOAD
+  tos 2/ iRSHIFT
   decSp branch
   (a);
 
@@ -416,23 +418,6 @@ a: ! ( u a -- store a cell at a memory address )
   {sp} iLOAD
   decSp branch
   (a);
-
-a: c@ ( b -- c )
-  tos iLOAD-C
-  1 iRSHIFT
-  t iSTORE-C
-  t iLOAD
-  t iSTORE-C
-  tos iLOAD-C
-  1 iAND if
-    t iLOAD-C
-    low 2/ iRSHIFT
-  else
-    t iLOAD-C
-    low 2/ iAND
-  then
-  tos iSTORE-C
-  a;
 
 a: dup ( u -- u u : duplicate item on top of stack )
   ++sp
@@ -466,17 +451,17 @@ a: >r ( u -- , R: -- u )
 :m =>r [ t' >r ] literal call ;m
 :m =next [ t' opNext ] literal call ;m
 
-a: r>  ( -- u , R: u -- )
-  {rp} iLOAD
-  t iSTORE-C
-  --rp
+a: r>
   ++sp
   tos iLOAD-C
   {sp} iSTORE
-  t iLOAD-C
+  {rp} iLOAD
   tos iSTORE-C
+  (a); ( fall-through to rdrop )
+a: rdrop ( --, R: u -- : drop top item on return stack )
+  --rp 
   a;
-
+ 
 a: r@ ( -- u, R: u -- u )
   ++sp
   tos iLOAD-C
@@ -484,21 +469,6 @@ a: r@ ( -- u, R: u -- u )
   {rp} iLOAD
   tos iSTORE-C
   a;
-
-a: rdrop ( --, R: u -- : drop top item on return stack )
-  --rp
-  a;
-
-a: execute ( xt -- : execute an execution token! )
-  tos iLOAD-C
-  t iSTORE-C
-  {sp} iLOAD
-  tos iSTORE-C
-  --sp
-  t iLOAD-C
-  1 iRSHIFT
-  {nest} branch
-  (a);
 
 a: sp! ( ??? u -- ??? : set stack depth )
   tos iLOAD-C
@@ -514,126 +484,114 @@ a: rp! ( u -- , R: ??? --- ??? : set return stack depth )
   decSp branch
   (a);
 
-a: rp@ ( -- u : get return stack depth )
-  ++sp
-  tos iLOAD-C
-  {sp} iSTORE
-  {rp} iLOAD-C
-  tos iSTORE-C
-  a;
-
 \ --- ---- ---- ---- no more direct assembly ---- ---- ---- --- 
 
 assembler.1 -order
 
-:ht #0   0 lit ;t ( --  0 : push  0 onto variable stack )
-:ht #1   1 lit ;t ( --  1 : push  1 onto variable stack )
-:ht #-1 -1 lit ;t ( -- -1 : push -1 onto variable stack )
-
-\ Add words written in assembly into dictionary, you will need 
-\ an understanding of wordlists to understand this.
-
-:to bye bye ;t
-:to and and ;t
-:to or or ;t
-:to xor xor ;t
-:to + + ;t
-:to um+ um+ ;t
-:to @ @ ;t
-:to ! ! ;t
-:to c@ c@ ;t
-:to dup dup ;t
-:to drop drop ;t
-:to swap swap ;t
-:to >r r> swap >r >r ;t compile-only
-:to r> r> r> swap >r ;t compile-only
-:to r@ r> r@ swap >r ;t compile-only
-:to execute execute ;t
-
-:t 1- #-1 + ;t
-:t 1+ #1 + ;t
-:ht sp@ {sp} lit @ 1+ ;t
-:t over swap dup >r swap r> ;t
-:t 0= if #0 exit then #-1 ;t
-:t invert #-1 xor ;t
-:t emit ( ch -- :  )
+:m : :t ;
+:m ; ;t ;
+:to bye bye ;
+:to and and ;
+:to or or ;
+:to xor xor ;
+:to um+ um+ ;
+:to @ @ ;
+:to ! ! ;
+:to dup dup ;
+:to drop drop ;
+:to swap swap ;
+:to execute execute ;
+:ht #0   0 lit ; ( --  0 : push  0 onto variable stack )
+:ht #1   1 lit ; ( --  1 : push  1 onto variable stack )
+:ht #-1 -1 lit ; ( -- -1 : push -1 onto variable stack )
+: + um+ drop ;
+: 1- #-1 + ;
+: 1+ #1 + ;
+:ht sp@ {sp} lit @ 1+ ;
+:ht rp@ {rp} lit @ 1- ;
+: 0= if #0 exit then #-1 ;
+: invert #-1 xor ;
+: emit ( ch -- )
    begin 8002 lit @ 1000 lit and 0= until
-   FF lit and 2000 lit or 8002 lit ! ;t
-:t key? ( -- ch -1 | 0 )
+   FF lit and 2000 lit or 8002 lit ! ;
+: key? ( -- ch -1 | 0 )
    8002 lit @ 100 lit and if #0 exit then
-   400 lit 8002 lit ! 8002 lit @ FF lit and #-1 ;t
-:t here h lit @ ;t
-:t base {base} lit ;t  ( -- a : base controls I/O radix )
-:t dpl {dpl} lit ;t    ( -- a : push address of 'dpl' )
-:t hld {hld} lit ;t    ( -- a : push address of 'hld' )
-:t bl $20 lit ;t       ( -- space : push a space )
-:t >in {in} lit ;t     ( -- b : push pointer to TIB position )
-:t hex  $10 lit base ! ;t ( -- : switch to hex I/O radix )
-:t source TERMBUF lit #tib lit @ ;t ( -- b u )
-:t last {last} lit @ ;t   ( -- : last defined word )
-:t state {state} lit ;t   ( -- a : compilation state variable )
-:t ] #-1 state ! ;t       ( -- : turn compile mode on )
-:t [ #0 state ! ;t immediate ( -- : turn compile mode off )
-:t nip swap drop ;t       ( u1 u2 -- u2 )
-:t tuck swap over ;t      ( u1 u2 -- u2 u1 u2 )
-:t ?dup dup if dup then ;t   ( u -- u u | 0 : dup if not zero )
-:t rot >r swap r> swap ;t ( u1 u2 u3 -- u2 u3 u1 )
-:t 2drop drop drop ;t     ( u u -- : drop two numbers )
-:t 2dup  over over ;t     ( u1 u2 -- u1 u2 u1 u2 )
-:t +! tuck @ + swap ! ;t  ( n a -- : incr val at addr by 'n' )
-:t = xor 0= ;t            ( u u -- f : equality )
-:t <> = 0= ;t             ( u u -- f : inequality )
-:t 0>= 8000 lit and 0= ;t ( n -- f : greater or equal to zero )
-:t 0< 0>= 0= ;t           ( n -- f : less than zero )
-:t negate 1- invert ;t    ( n -- n : negate [twos compliment] )
-:t - negate + ;t          ( u u -- u : subtract )
-:t < - 0< ;t              ( n n -- f : signed less than )
-:t > swap < ;t            ( n n -- f : signed greater than )
-:t 0> #0 > ;t             ( n -- f : greater than zero )
-:t 2* #1 lls ;t           ( u -- u : multiply by two )
-:t 2/ #1 lrs ;t           ( u -- u : divide by two )
-:t cell 2 lit ;t          ( -- u : size of memory cell )
-:t cell+ cell + ;t ( a -- a : increment address to next cell )
-:t pick sp@ + 2* @ ;t     ( ??? u -- ??? u u : )
-:t u< 2dup 0>= swap 0>= xor >r < r> xor ;t ( u u -- f : )
-:t aligned dup #1 and + ;t       ( b -- u : align a pointer )
-:t align here aligned h lit ! ;t ( -- : align dictionary ptr )
-:t depth {sp0} lit @ sp@ - 1- ;t ( -- u : var stack depth )
-:t c! ( c b -- : store character at address )
+   400 lit 8002 lit ! 8002 lit @ FF lit and #-1 ;
+\ TODO: `h lit` -> `:ht #h h lit ;`
+: here h lit @ ;     ( -- u )
+: base {base} lit ;  ( -- a : base controls I/O radix )
+: dpl {dpl} lit ;    ( -- a : push address of 'dpl' )
+: hld {hld} lit ;    ( -- a : push address of 'hld' )
+: bl 20 lit ;        ( -- space : push a space )
+: >in {in} lit ;     ( -- b : push pointer to TIB position )
+: hex  10 lit base ! ; ( -- : switch to hex I/O radix )
+: source TERMBUF lit #tib lit @ ; ( -- b u )
+: last {last} lit @ ;   ( -- : last defined word )
+: state {state} lit ;   ( -- a : compilation state variable )
+: ] #-1 state ! ;       ( -- : turn compile mode on )
+: [ #0 state ! ; immediate ( -- : turn compile mode off )
+: over swap dup >r swap r> ; ( u1 u2 -- u1 u2 u1 )
+: nip swap drop ;       ( u1 u2 -- u2 )
+: tuck swap over ;      ( u1 u2 -- u2 u1 u2 )
+: ?dup dup if dup then ;   ( u -- u u | 0 : dup if not zero )
+: rot >r swap r> swap ; ( u1 u2 u3 -- u2 u3 u1 )
+: 2drop drop drop ;     ( u u -- : drop two numbers )
+: 2dup  over over ;     ( u1 u2 -- u1 u2 u1 u2 )
+: +! tuck @ + swap ! ;  ( n a -- : incr val at addr by 'n' )
+: negate 1- invert ;    ( n -- n : negate [twos compliment] )
+: - negate + ;          ( u u -- u : subtract )
+: = xor 0= ;            ( u u -- f : equality )
+: <> = 0= ;             ( u u -- f : inequality )
+: 0>= 8000 lit and 0= ; ( n -- f : greater or equal to zero )
+: 0< 0>= 0= ;           ( n -- f : less than zero )
+: < - 0< ;              ( n n -- f : signed less than )
+: > swap < ;            ( n n -- f : signed greater than )
+: 0> #0 > ;             ( n -- f : greater than zero )
+: u< 2dup 0>= swap 0>= xor >r < r> xor ; ( u u -- f : )
+: 2* #1 lls ;           ( u -- u : multiply by two )
+: 2/ #1 lrs ;           ( u -- u : divide by two )
+: cell 2 lit ;          ( -- u : size of memory cell )
+: cell+ cell + ; ( a -- a : increment address to next cell )
+: pick sp@ + 2* @ ;     ( ??? u -- ??? u u : )
+: aligned dup #1 and + ;       ( b -- u : align a pointer )
+: align here aligned h lit ! ; ( -- : align dictionary ptr )
+: depth {sp0} lit @ sp@ - 1- ; ( -- u : var stack depth )
+: c@ dup @ swap #1 and if FF lit lrs then FF lit and ;
+: c! ( c b -- : store character at address )
   dup dup >r #1 and if
     @ 00FF lit and swap FF lit lls
   else
     @ FF00 lit and swap FF lit and
-  then or r> ! ;t
-:t count dup 1+ swap c@ ;t ( b -- b c )
-:t allot aligned h lit +! ;t    ( u -- )
-:t , align here ! cell allot ;t ( u -- )
-:t abs dup 0< if negate then ;t ( n -- u )
-:t mux dup >r and swap r> invert and or ;t ( u1 u2 f -- )
-:t max 2dup < mux ;t  ( n n -- n : maximum of two numbers )
-:t min 2dup > mux ;t  ( n n -- n : minimum of two numbers )
-:t +string #1 over min rot over + rot rot - ;t ( b u -- b u )
-:t catch ( xt -- exception# | 0 \ return addr on stack )
+  then or r> ! ;
+: count dup 1+ swap c@ ; ( b -- b c )
+: allot aligned h lit +! ;    ( u -- )
+: , align here ! cell allot ; ( u -- )
+: abs dup 0< if negate then ; ( n -- u )
+: mux dup >r and swap r> invert and or ; ( u1 u2 sel -- u )
+: max 2dup < mux ;  ( n n -- n : maximum of two numbers )
+: min 2dup > mux ;  ( n n -- n : minimum of two numbers )
+: +string #1 over min rot over + rot rot - ; ( b u -- b u )
+: catch ( xt -- exception# | 0 \ return addr on stack )
    sp@ >r              ( xt )   \ save data stack pointer
    {handler} lit @ >r  ( xt )   \ and previous handler
    rp@ {handler} lit ! ( xt )   \ set current handler
    execute             ( )      \ execute returns if no throw
    r> {handler} lit !  ( )      \ restore previous handler
    rdrop               ( )      \ discard saved stack ptr
-   #0 ;t               ( 0 )    \ normal completion
-:t throw ( ??? exception# -- ??? exception# )
+   #0 ;               ( 0 )    \ normal completion
+: throw ( ??? exception# -- ??? exception# )
     ?dup if              ( exc# )  \ 0 throw is no-op
       {handler} lit @ rp! ( exc# ) \ restore prev return stack
       r> {handler} lit !  ( exc# ) \ restore prev handler
       r> swap >r          ( saved-sp ) \ exc# on return stack
       sp! drop r>         ( exc# ) \ restore stack
-    then ;t
-:t um* ( u u -- ud : double cell width multiply )
+    then ;
+: um* ( u u -- ud : double cell width multiply )
   #0 swap ( u1 0 u2 ) $F lit
   for dup um+ >r >r dup um+ r> + r>
     if >r over um+ r> + then
-  next rot drop ;t
-:t um/mod ( ud u -- ur uq : unsigned double cell div/mod )
+  next rot drop ;
+: um/mod ( ud u -- ur uq : unsigned double cell div/mod )
   ?dup 0= -A lit and throw 
   2dup u<
   if negate $F lit
@@ -642,18 +600,18 @@ assembler.1 -order
       if >r drop 1+ r> else drop then r>
     next
     drop swap exit
-  then 2drop drop #-1 dup ;t
-:t key begin key? until ;t ( c -- : get a character from UART )
-:t type begin dup while swap count emit swap 1- repeat 2drop ;t
-:t cmove for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;t
-:t do$ r> r> 2* dup count + aligned 2/ >r swap >r ;t ( -- a : )
-:t ($) do$ ;t            ( -- a : do string NB. )
-:t .$ do$ count type ;t  ( -- )
+  then 2drop drop #-1 dup ;
+: key begin key? until ; ( c -- : get a character from UART )
+: type begin dup while swap count emit swap 1- repeat 2drop ;
+: cmove for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;
+:ht do$ r> r> 2* dup count + aligned 2/ >r swap >r ; ( -- a : )
+:ht ($) do$ ;            ( -- a : do string NB. )
+:ht .$ do$ count type ;  ( -- )
 :m ." .$ $literal ;m
 :m $" ($) $literal ;m
-:t space bl emit ;t               ( -- : print space )
-:t cr .$ 2 tc, =cr tc, =lf tc, ;t ( -- : print new line )
-:t ktap ( bot eot cur c -- bot eot cur )
+: space bl emit ;               ( -- : print space )
+: cr .$ 2 tc, =cr tc, =lf tc, ; ( -- : print new line )
+:ht ktap ( bot eot cur c -- bot eot cur )
   dup dup =cr lit <> >r  =lf lit <> r> and if \ Not End Line?
     dup =bksp lit <> >r =del lit <> r> and if \ Not Del Char?
       bl 
@@ -666,8 +624,8 @@ assembler.1 -order
     then
     r> +
     exit
-  then drop nip dup ;t
-:t accept ( b u -- b u : read in a line of user input )
+  then drop nip dup ;
+: accept ( b u -- b u : read in a line of user input )
   over + over
   begin
     2dup xor
@@ -675,16 +633,16 @@ assembler.1 -order
     key dup bl - $5F lit u< if 
       ( tap: ) dup emit over c! 1+ 
     else ktap then
-  repeat drop over - ;t
-:t query ( -- : get line)
-   TERMBUF lit =buf lit accept #tib lit ! drop #0 >in ! ;t 
-:t ?depth depth > -4 lit and throw ;t ( u -- )
-:t -trailing ( b u -- b u : remove trailing spaces )
+  repeat drop over - ;
+: query ( -- : get line)
+   TERMBUF lit =buf lit accept #tib lit ! drop #0 >in ! ; 
+: ?depth depth > -4 lit and throw ; ( u -- )
+: -trailing ( b u -- b u : remove trailing spaces )
   for
     aft bl over r@ + c@ <
       if r> 1+ exit then
     then
-  next #0 ;t
+  next #0 ;
 :ht look ( b u c xt -- b u : skip until *xt* test succeeds )
   swap >r rot rot
   begin
@@ -693,35 +651,35 @@ assembler.1 -order
     over c@ r@ - r@ bl = 4 lit pick execute
     if rdrop rot drop exit then
     +string
-  repeat rdrop rot drop ;t
-:ht no-match if 0> exit then 0= 0= ;t ( c1 c2 -- t )
-:ht match no-match invert ;t          ( c1 c2 -- t )
-:t parse ( c -- b u ; <string> )
+  repeat rdrop rot drop ;
+:ht no-match if 0> exit then 0= 0= ; ( c1 c2 -- t )
+:ht match no-match invert ;          ( c1 c2 -- t )
+: parse ( c -- b u ; <string> )
   >r source drop >in @ + #tib lit @ >in @ - r@
   >r over r> swap >r >r
   r@ t' no-match lit look 2dup
   ( b u c -- b u delta: )
   r> t' match lit look swap r> - >r - r> 1+ 
   >in +!
-  r> bl = if -trailing then #0 max ;t
-:t spaces begin dup 0> while space 1- repeat drop ;t ( +n -- )
-:t hold #-1 hld +! hld @ c! ;t ( c -- : save char to hold )
-:t #> 2drop hld @ =tbufend lit over - ;t  ( u -- b u )
-:t #  ( d -- d : add next character in number to hold space )
+  r> bl = if -trailing then #0 max ;
+: spaces begin dup 0> while space 1- repeat drop ; ( +n -- )
+: hold #-1 hld +! hld @ c! ; ( c -- : save char to hold )
+: #> 2drop hld @ =tbufend lit over - ;  ( u -- b u )
+: #  ( d -- d : add next character in number to hold space )
    2 lit ?depth
    #0 base @
    ( extract: ) 
      dup >r um/mod r> swap >r um/mod r> rot ( ud ud -- ud u )
    ( digit: ) 
      9 lit over < 7 lit and + [char] 0 + ( u -- c )
-   hold ;t
-:t #s begin # 2dup ( d0= -> ) or 0= until ;t       ( d -- 0 )
-:t <# =tbufend lit hld ! ;t                        ( -- )
-:t sign 0< if [char] - hold then ;t                ( n -- )
-:t u.r >r #0 <# #s #>  r> over - spaces type ;t    ( u +n -- )
-:t u.  #0 <# #s #> space type ;t                   ( u -- )
-:t . dup >r abs #0 <# #s r> sign #> space type ;t  ( n -- )
-:t >number ( ud b u -- ud b u : convert string to number )
+   hold ;
+: #s begin # 2dup ( d0= -> ) or 0= until ;       ( d -- 0 )
+: <# =tbufend lit hld ! ;                        ( -- )
+: sign 0< if [char] - hold then ;                ( n -- )
+: u.r >r #0 <# #s #>  r> over - spaces type ;    ( u +n -- )
+: u. space #0 u.r ;                              ( u -- )
+: . dup >r abs #0 <# #s r> sign #> space type ;  ( n -- )
+: >number ( ud b u -- ud b u : convert string to number )
   begin
     2dup >r >r drop c@ base @        ( get next character )
     ( digit? -> ) >r [char] 0 - 9 lit over <
@@ -735,8 +693,8 @@ assembler.1 -order
     ( d+ -> ) >r swap >r um+ r> + r> + ( accumulate digit )
     r> r>                   ( restore string )
     +string dup 0=          ( advance string and test for end )
-  until ;t
-:t number? ( a u -- d -1 | a u 0 : string to a number )
+  until ;
+: number? ( a u -- d -1 | a u 0 : string to a number )
   #-1 dpl !
   base @ >r
   over c@ [char] - = dup >r if     +string then
@@ -750,8 +708,8 @@ assembler.1 -order
   repeat 
   2drop r> if 
     ( dnegate -> ) invert >r invert #1 um+ r> + 
-  then r> base ! #-1 ;t
-:t compare ( a1 u1 a2 u2 -- n : string equality )
+  then r> base ! #-1 ;
+: compare ( a1 u1 a2 u2 -- n : string equality )
   rot
   over - ?dup if >r 2drop r> nip exit then
   for ( a1 a2 )
@@ -759,11 +717,11 @@ assembler.1 -order
       count rot count rot - ?dup
       if rdrop nip nip exit then
     then
-  next 2drop #0 ;t
-:to .s depth  for aft r@ pick . then next ;t
-:t nfa cell+ ;t ( pwd -- nfa : move word ptr to name field )
-:t cfa nfa dup c@ $1F lit and + cell+ cell negate and ;t 
-:t (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0 )
+  next 2drop #0 ;
+:to .s depth  for aft r@ pick . then next ;
+: nfa cell+ ; ( pwd -- nfa : move word ptr to name field )
+: cfa nfa dup c@ $1F lit and + cell+ cell negate and ; 
+: (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0 )
   swap >r dup
   begin
     dup
@@ -777,13 +735,13 @@ assembler.1 -order
     then
     nip dup @
   repeat
-  2drop #0 r> #0 ;t
-:t find last (find) rot drop ;t  ( "name" -- b )
-:t literal state @ if =push lit , , then ;t immediate ( u -- )
-:t compile, 2/ align C000 lit or , ;t                 ( xt -- )
-:t ?found if exit then ( u f -- )
-   space count type [char] ? emit cr -D lit throw ;t 
-:t interpret                                          ( b -- )
+  2drop #0 r> #0 ;
+: find last (find) rot drop ;  ( "name" -- b )
+: literal state @ if =push lit , , then ; immediate ( u -- )
+: compile, 2/ align C000 lit or , ;                 ( xt -- )
+:ht ?found if exit then ( u f -- )
+   space count type [char] ? emit cr -D lit throw ; 
+: interpret                                          ( b -- )
   find ?dup if
     state @
     if
@@ -805,44 +763,46 @@ assembler.1 -order
     postpone literal exit
   then
   r> #0 ?found \ Could vector ?found
-  ;t
-:t word parse here dup >r 2dup ! 1+ swap cmove r> ;t ( c -- b )
-:to words last begin 
-   dup nfa count 1f lit and space type @ ?dup 0= until ;t
-:to see bl word find ?found cr 
+  ;
+: word parse here dup >r 2dup ! 1+ swap cmove r> ; ( c -- b )
+: words last begin 
+   dup nfa count 1f lit and space type @ ?dup 0= until ;
+: see bl word find ?found cr 
   begin 
     dup @ =unnest lit <> 
-  while dup @ u. cell+ repeat @ u. ;t
+  while dup @ u. cell+ repeat @ u. ;
 :to : align here last , {last} lit ! ( "name" -- )
   bl word
   dup c@ 0= -A lit and throw
   count + h lit ! align
-  =0iGET lit , =nest lit , ] BABE lit ;t
+  =0iGET lit , =nest lit , ] BABE lit ;
 :to ; postpone [ 
    BABE lit <> -16 lit and throw 
-   =unnest lit , ;t immediate compile-only
-:to begin align here ;t immediate compile-only
-:to until =jumpz lit , 2/ , ;t immediate compile-only
-:to again =jump  lit , 2/ , ;t immediate compile-only
-:to if =jumpz lit , here #0 , ;t immediate compile-only
-:to then here 2/ swap ! ;t immediate compile-only
-:to for =>r lit , here ;t immediate compile-only
-:to next =next lit , 2/ , ;t immediate compile-only
-:to ' bl word find ?found cfa literal ;t immediate
-:t compile r> dup 2* @ , 1+ >r ;t compile-only
-:to exit compile exit ;t immediate compile-only
-:to ." compile .$  [char] " 
-       word count + h lit ! align ;t immediate compile-only
-:to $" compile ($) [char] " 
-       word count + h lit ! align ;t immediate compile-only
-:to ( [char] ) parse 2drop ;t immediate
-:to \ source drop @ >in ! ;t immediate
-:to immediate last nfa @ $40 lit or last nfa ! ;t
-:to dump begin over c@ u. +string ?dup 0= until drop ;t
-:t eval begin bl word dup c@ while 
-   interpret #1 ?depth repeat drop ."  ok" cr ;t
-:t ini hex postpone [ #0 >in ! #-1 dpl ! ;t ( -- )
-:t quit ( -- : interpreter loop [and more] )
+   =unnest lit , ; immediate compile-only
+:to begin align here ; immediate compile-only
+:to until =jumpz lit , 2/ , ; immediate compile-only
+:to again =jump  lit , 2/ , ; immediate compile-only
+:to if =jumpz lit , here #0 , ; immediate compile-only
+:to then here 2/ swap ! ; immediate compile-only
+:to for =>r lit , here ; immediate compile-only
+:to next =next lit , 2/ , ; immediate compile-only
+:to ' bl word find ?found cfa literal ; immediate
+: compile r> dup 2* @ , 1+ >r ; compile-only
+:to >r compile >r ; immediate compile-only
+:to r> compile r> ; immediate compile-only
+:to r@ compile r@ ; immediate compile-only 
+:to exit compile exit ; immediate compile-only
+:ht pack word count + h lit ! align ;
+:to ." compile .$  [char] " pack ; immediate compile-only
+:to $" compile ($) [char] " pack ; immediate compile-only
+:to ( [char] ) parse 2drop ; immediate
+:to \ source drop @ >in ! ; immediate
+:to immediate last nfa @ $40 lit or last nfa ! ;
+: dump begin over c@ u. +string ?dup 0= until drop ;
+: eval begin bl word dup c@ while 
+   interpret #1 ?depth repeat drop ."  ok" cr ;
+:ht ini hex postpone [ #0 >in ! #-1 dpl ! ; ( -- )
+: quit ( -- : interpreter loop [and more] )
   there t2/ <cold> t! \ program entry point set here
   ." eForth 3.2" cr
   ini 
@@ -850,7 +810,7 @@ assembler.1 -order
     query t' eval lit catch
     ( ?error -> ) ?dup if
       space . [char] ? emit cr ini
-    then again ;t
+    then again ;
 
 \ --- ---- ---- ---- implementation finished ---- ---- ---- ---
 

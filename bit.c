@@ -183,7 +183,7 @@ static int bcpu(bcpu_t *b) {
 		if ((b->sleep_every && (count % b->sleep_every) == 0) && b->sleep_ms > 0)
 			os_sleep_ms(b, b->sleep_ms);
 
-		const mw_t instr = m[pc % MSIZE];
+		const mw_t instr = m[pc++ % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 
@@ -202,7 +202,6 @@ static int bcpu(bcpu_t *b) {
 
 		const mw_t lop = (cmd & 0x8) ? op1 : bload(b, op1);
 
-		pc++;
 		switch (cmd) {
 		case 0x0: acc |= lop;                            break; /* OR      */
 		case 0x1: acc &= lop;                            break; /* AND     */
@@ -214,15 +213,15 @@ static int bcpu(bcpu_t *b) {
 		case 0x6: acc = bload(b, lop);                   break; /* LOAD    */
 		case 0x7: bstore(b, lop, acc);                   break; /* STORE   */
 
-		case 0x8: acc = bload(b, op1);                   break; /* LOAD-C  */
-		case 0x9: bstore(b, op1, acc);                   break; /* STORE-C */
-		case 0xA: acc = op1;                             break; /* LITERAL */
+		case 0x8: acc = bload(b, lop);                   break; /* LOAD-C  */
+		case 0x9: bstore(b, lop, acc);                   break; /* STORE-C */
+		case 0xA: acc = lop;                             break; /* LITERAL */
 		case 0xB:                                        break; /* UNUSED  */
 
-		case 0xC: pc = op1;                              break; /* JUMP    */
-		case 0xD: if (!acc) pc = op1;                    break; /* JUMPZ   */
-		case 0xE: if (op1 & 1) flg = acc; else pc = acc; break; /* SET     */
-		case 0xF: acc = op1 & 1 ? flg : pc - 1;          break; /* GET     */
+		case 0xC: pc = lop;                              break; /* JUMP    */
+		case 0xD: if (!acc) pc = lop;                    break; /* JUMPZ   */
+		case 0xE: if (lop & 1) flg = acc; else pc = acc; break; /* SET     */
+		case 0xF: acc = lop & 1 ? flg : pc - 1;          break; /* GET     */
 		default: r = -1; goto halt;
 		}
 	}

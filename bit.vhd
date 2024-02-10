@@ -253,8 +253,8 @@ begin
 			-- bit to a lower bit so we can perform the state decision before
 			-- the bit is being processed.
 			if i = '0' and c.state = FETCH then
-				f.indir <= true;
-				f.state <= INDIRECT; -- Override FETCH Choice!
+				f.indir <= true after delay;
+				f.state <= INDIRECT after delay; -- Override FETCH Choice!
 			end if;
 		elsif last4 = '1' then
 			f.last4 <= true after delay;

@@ -141,20 +141,20 @@ size =cell - tep !
 : iLOAD    2/ 6000 or t, ;
 : iSTORE   2/ 7000 or t, ;
 
-: iLOAD-C  2/ 8000 or t, ;
-: iSTORE-C 2/ 9000 or t, ;
-: iLITERAL A000 or t, ;
-: iUNUSED  B000 or t, ;
-: iJUMP    C000 or t, ;
-: iJUMPZ   D000 or t, ;
-: iSET     E000 or t, ;
-: iGET     F000 or t, ;
+: iLOAD-C  2/ 8000 or t, ; \ Store address
+: iSTORE-C 2/ 9000 or t, ; \ Load address
+: iLITERAL A000 or t, ; \ Load 12-bit literal into accm
+: iUNUSED  B000 or t, ; \ Instruction currently not used...
+: iJUMP    C000 or t, ; \ Unconditional jump
+: iJUMPZ   D000 or t, ; \ Conditional Jump!
+: iSET     E000 or t, ; \ Set CPU flags or program counter
+: iGET     F000 or t, ; \ Get CPU flags or program counter
 
- 1 constant flgCy
- 2 constant flgZ
- 4 constant flgNg
- 8 constant flgR
-10 constant flgHlt
+ 1 constant flgCy  \ Carry flag
+ 2 constant flgZ   \ Is zero flag
+ 4 constant flgNg  \ Is negative flag
+ 8 constant flgR   \ Set to reset flag, automatically cleared
+10 constant flgHlt \ Set to halt CPU
 
 : flags? 1 iGET ;
 : flags! 1 iSET ;
@@ -186,7 +186,6 @@ label: entry ( previous three instructions are irrelevant )
 0 t,  \ entry point to virtual machine
 
 FFFF tvar set       \ all bits set, -1
-  FF tvar low       \ lowest 8-bits set
    0 tvar <cold>    \ entry point of virtual machine, set later
 
    0 tvar ip        \ instruction pointer
@@ -225,11 +224,11 @@ label: start
   ip iSTORE-C
   \ -- fall-through --
 label: vm ( The Forth virtual machine )
-  ip iLOAD-C
-  t iSTORE-C
-  ( ip iLOAD-C already in accm. ) 1 iADD ip iSTORE-C
-  t iLOAD-C
-  0 iSET \ jump to next token
+  ip iLOAD-C          \ load next instruction from `ip`
+  t iSTORE-C          \ store it in `t`
+  1 iADD ip iSTORE-C  \ add 1 to it, stored it back to `ip`
+  t iLOAD-C           \ load back original `ip` value from `t`
+  0 iSET              \ jump to next token by setting `pc`
 
 :m a: ( "name" -- : assembly only routine, no header )
   CAFED00D
@@ -301,7 +300,6 @@ label: {unnest} ( return from function call )
 :m ;t CAFEBABE <> if abort" unstructured" then 
   talign unnest target.only.1 -order ;
 
-
 a: opPush ( pushes next value in instr stream to the stack )
   ++sp
   tos iLOAD-C
@@ -344,9 +342,9 @@ a: opNext
 :m lit         opPush t, ;m
 :m [char] char opPush t, ;m
 :m char   char opPush t, ;m
-:m =push  [ t' opPush  ] literal call  ;m
-:m =jump  [ t' opJump  ] literal call  ;m
-:m =jumpz [ t' opJumpZ ] literal call  ;m
+:m =push  [ t' opPush  ] literal call ;m
+:m =jump  [ t' opJump  ] literal call ;m
+:m =jumpz [ t' opJumpZ ] literal call ;m
 :m begin talign there ;m
 :m until talign opJumpZ 2/ t, ;m
 :m again talign opJump  2/ t, ;m
@@ -490,35 +488,35 @@ assembler.1 -order
 
 :m : :t ;
 :m ; ;t ;
-:to bye bye ;
-:to and and ;
-:to or or ;
-:to xor xor ;
-:to um+ um+ ;
-:to @ @ ;
-:to ! ! ;
-:to dup dup ;
-:to drop drop ;
-:to swap swap ;
-:to execute execute ;
+:to bye bye ; ( -- )
+:to and and ; ( u u -- u )
+:to or or ; ( u u -- u )
+:to xor xor ; ( u u -- u )
+:to um+ um+ ; ( u u -- u carry )
+:to @ @ ; ( a -- u )
+:to ! ! ; ( u a -- )
+:to dup dup ; ( u -- u u )
+:to drop drop ; ( u -- )
+:to swap swap ; ( u1 u2 -- u2 u1 )
+:to execute execute ; ( xt -- )
 :ht #0   0 lit ; ( --  0 : push  0 onto variable stack )
 :ht #1   1 lit ; ( --  1 : push  1 onto variable stack )
 :ht #-1 -1 lit ; ( -- -1 : push -1 onto variable stack )
-: + um+ drop ;
-: 1- #-1 + ;
-: 1+ #1 + ;
-:ht sp@ {sp} lit @ 1+ ;
-:ht rp@ {rp} lit @ 1- ;
-: 0= if #0 exit then #-1 ;
-: invert #-1 xor ;
+: + um+ drop ; ( n n -- n )
+: 1- #-1 + ; ( n -- n )
+: 1+ #1 + ; ( n -- n )
+:ht sp@ {sp} lit @ 1+ ; ( -- u )
+:ht rp@ {rp} lit @ 1- ; ( -- u )
+: 0= if #0 exit then #-1 ; ( u -- f )
+: invert #-1 xor ; ( u -- u )
 : emit ( ch -- )
    begin 8002 lit @ 1000 lit and 0= until
    FF lit and 2000 lit or 8002 lit ! ;
 : key? ( -- ch -1 | 0 )
    8002 lit @ 100 lit and if #0 exit then
    400 lit 8002 lit ! 8002 lit @ FF lit and #-1 ;
-\ TODO: `h lit` -> `:ht #h h lit ;`
-: here h lit @ ;     ( -- u )
+:ht #h h lit ;    ( -- a )
+: here #h @ ;     ( -- u )
 : base {base} lit ;  ( -- a : base controls I/O radix )
 : dpl {dpl} lit ;    ( -- a : push address of 'dpl' )
 : hld {hld} lit ;    ( -- a : push address of 'hld' )
@@ -533,7 +531,7 @@ assembler.1 -order
 : over swap dup >r swap r> ; ( u1 u2 -- u1 u2 u1 )
 : nip swap drop ;       ( u1 u2 -- u2 )
 : tuck swap over ;      ( u1 u2 -- u2 u1 u2 )
-: ?dup dup if dup then ;   ( u -- u u | 0 : dup if not zero )
+: ?dup dup if dup then ; ( u -- u u | 0 : dup if not zero )
 : rot >r swap r> swap ; ( u1 u2 u3 -- u2 u3 u1 )
 : 2drop drop drop ;     ( u u -- : drop two numbers )
 : 2dup  over over ;     ( u1 u2 -- u1 u2 u1 u2 )
@@ -551,10 +549,10 @@ assembler.1 -order
 : 2* #1 lls ;           ( u -- u : multiply by two )
 : 2/ #1 lrs ;           ( u -- u : divide by two )
 : cell 2 lit ;          ( -- u : size of memory cell )
-: cell+ cell + ; ( a -- a : increment address to next cell )
+: cell+ cell + ;    ( a -- a : increment address to next cell )
 : pick sp@ + 2* @ ;     ( ??? u -- ??? u u : )
-: aligned dup #1 and + ;       ( b -- u : align a pointer )
-: align here aligned h lit ! ; ( -- : align dictionary ptr )
+: aligned dup #1 and + ; ( b -- u : align a pointer )
+: align here aligned #h ! ; ( -- : align dictionary ptr )
 : depth {sp0} lit @ sp@ - 1- ; ( -- u : var stack depth )
 : c@ dup @ swap #1 and if FF lit lrs then FF lit and ;
 : c! ( c b -- : store character at address )
@@ -564,7 +562,7 @@ assembler.1 -order
     @ FF00 lit and swap FF lit and
   then or r> ! ;
 : count dup 1+ swap c@ ; ( b -- b c )
-: allot aligned h lit +! ;    ( u -- )
+: allot aligned #h +! ; ( u -- )
 : , align here ! cell allot ; ( u -- )
 : abs dup 0< if negate then ; ( n -- u )
 : mux dup >r and swap r> invert and or ; ( u1 u2 sel -- u )
@@ -634,9 +632,9 @@ assembler.1 -order
       ( tap: ) dup emit over c! 1+ 
     else ktap then
   repeat drop over - ;
-: query ( -- : get line)
+: query ( -- : get line )
    TERMBUF lit =buf lit accept #tib lit ! drop #0 >in ! ; 
-: ?depth depth > -4 lit and throw ; ( u -- )
+:ht ?depth depth > -4 lit and throw ; ( u -- )
 : -trailing ( b u -- b u : remove trailing spaces )
   for
     aft bl over r@ + c@ <
@@ -719,9 +717,9 @@ assembler.1 -order
     then
   next 2drop #0 ;
 :to .s depth  for aft r@ pick . then next ;
-: nfa cell+ ; ( pwd -- nfa : move word ptr to name field )
-: cfa nfa dup c@ $1F lit and + cell+ cell negate and ; 
-: (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0 )
+:ht nfa cell+ ; ( pwd -- nfa : move word ptr to name field )
+:ht cfa nfa dup c@ $1F lit and + cell+ cell negate and ; 
+:ht (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0 )
   swap >r dup
   begin
     dup
@@ -738,10 +736,10 @@ assembler.1 -order
   2drop #0 r> #0 ;
 : find last (find) rot drop ;  ( "name" -- b )
 : literal state @ if =push lit , , then ; immediate ( u -- )
-: compile, 2/ align C000 lit or , ;                 ( xt -- )
+: compile, 2/ align C000 lit or , ; ( xt -- )
 :ht ?found if exit then ( u f -- )
    space count type [char] ? emit cr -D lit throw ; 
-: interpret                                          ( b -- )
+: interpret ( b -- )
   find ?dup if
     state @
     if
@@ -762,7 +760,7 @@ assembler.1 -order
     then
     postpone literal exit
   then
-  r> #0 ?found \ Could vector ?found
+  r> #0 ?found \ Could vector ?found if we wanted to
   ;
 : word parse here dup >r 2dup ! 1+ swap cmove r> ; ( c -- b )
 : words last begin 
@@ -774,7 +772,7 @@ assembler.1 -order
 :to : align here last , {last} lit ! ( "name" -- )
   bl word
   dup c@ 0= -A lit and throw
-  count + h lit ! align
+  count + #h ! align
   =0iGET lit , =nest lit , ] BABE lit ;
 :to ; postpone [ 
    BABE lit <> -16 lit and throw 
@@ -792,7 +790,7 @@ assembler.1 -order
 :to r> compile r> ; immediate compile-only
 :to r@ compile r@ ; immediate compile-only 
 :to exit compile exit ; immediate compile-only
-:ht pack word count + h lit ! align ;
+:ht pack word count + #h ! align ;
 :to ." compile .$  [char] " pack ; immediate compile-only
 :to $" compile ($) [char] " pack ; immediate compile-only
 :to ( [char] ) parse 2drop ; immediate
@@ -822,4 +820,5 @@ save-target bit.bin
 .end
 .( DONE ) cr
 bye
+
 

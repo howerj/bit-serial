@@ -21,4 +21,7 @@ cr words
 0 z1
 1 z1
 
+: x 2 2 + . cr ;
+x x x
+
 cr bye

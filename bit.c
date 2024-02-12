@@ -27,7 +27,7 @@ typedef uint16_t mw_t; /* machine word */
 
 typedef struct {
 	mw_t pc, acc, flg, m[MSIZE];
-	FILE *in, *out;
+	FILE *in, *out, *debug;
 	mw_t ch, leds, switches;
 	long done, sleep_ms, sleep_every;
 #ifdef __unix__
@@ -108,6 +108,21 @@ static int os_deinit(bcpu_t *b) { assert(b); return 0; }
 #endif
 #endif /** __unix__ **/
 
+static int debug_on(bcpu_t *b) {
+	assert(b);
+	return b->debug != NULL;
+}
+
+static int print_registers(bcpu_t *b, unsigned count, uint16_t pc, uint16_t acc, uint16_t instr, uint16_t flg) {
+	assert(b);
+	if (!debug_on(b))
+		return 0;
+	FILE *o = b->debug;
+	if (fprintf(o, "CYC:%08X PC=%04X AC=%04X IN=%04X FL=%04X\n", count, pc, acc, instr, flg) < 0)
+		return -1;
+	return 0;
+}
+
 static int wrap_getch(bcpu_t *b) {
 	assert(b);
 	const int ch = os_getch(b);
@@ -187,6 +202,11 @@ static int bcpu(bcpu_t *b) {
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 
+		if (print_registers(b, count, pc, acc, instr, flg) < 0) {
+			r = -1;
+			goto halt;
+		}
+
 		if (flg & (1u << fHLT))
 			goto halt;
 		if (flg & (1u << fR)) {
@@ -196,11 +216,12 @@ static int bcpu(bcpu_t *b) {
 			continue;
 		}
 
-		flg &= ~((1u << fZ) | (1u << fNg));
+		flg &= ~((1u << fZ) | (1u << fNg)); /* clear zero/negative flags */
 		flg |= ((!acc) << fZ);              /* set zero flag     */
 		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
 
-		const mw_t lop = (cmd & 0x8) ? op1 : bload(b, op1);
+		const int indirect = cmd & 0x8;
+		const mw_t lop = indirect ? op1 : bload(b, op1);
 
 		switch (cmd) {
 		case 0x0: acc |= lop;                            break; /* OR      */
@@ -238,8 +259,9 @@ int main(int argc, char **argv) {
 		(void)fprintf(stderr, "Usage: %s prog.hex\n", argv[0]);
 		return 1;
 	}
-	b.in  = stdin;
-	b.out = stdout;
+	b.in    = stdin;
+	b.out   = stdout;
+	/*b.debug = stderr;*/
 	FILE *in = fopen(argv[1], "rb");
 	if (!in)
 		return 2;
@@ -253,6 +275,7 @@ int main(int argc, char **argv) {
 		return 3;
 	setbuf(stdin,  NULL);
 	setbuf(stdout, NULL);
+	setbuf(stderr, NULL);
 	const int r = bcpu(&b) < 0 ? 4 : 0;
 	if (os_deinit(&b) < 0)
 		return 5;

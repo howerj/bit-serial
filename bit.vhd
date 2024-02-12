@@ -504,11 +504,11 @@ begin
 				ie    <= '1' after delay;
 				f.acc <= i & c.acc(c.acc'high downto 1) after delay;
 			end if;
-		-- ADVANCE reuses our adder in iADD to add one to the program counter,
-		-- this state *is* reached when we do a iJUMP, iJUMPZ or an iSET on the
-		-- program counter, those instructions clear the 'tcarry', which is
-		-- normally '1'. A possible speed optimization would be to avoid this 
-		-- state, but this may require more floor space on the FPGA.
+		-- ADVANCE reuses our adder in iADD to add one to the program counter.
+		-- most instructions go through this one to advance the program counter.
+		--
+		-- 'iSET' also goes through this state to save space, but it sets 'tcarry'
+		-- to zero avoid advancing the set value.
 		when ADVANCE =>
 			f.choice <= FETCH after delay;
 			if c.first then

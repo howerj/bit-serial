@@ -28,10 +28,10 @@ documentation: readme.htm
 %.htm: %.md
 	pandoc $< -o $@
 
-bit.hex bit.bin: bit.fth bit
+bit.hex bit.bin bit.inc: bit.fth
 	gforth $<
 
-bit: bit.c
+bit: bit.c bit.inc
 	${CC} ${CFLAGS} $< -o $@
 
 %.o: %.vhd

@@ -97,10 +97,22 @@ size =cell - tep !
   parse-word dup tc, 0 ?do count tc, loop drop talign ;m
 :m hex# ( u -- addr len )  
   0 <# base @ >r hex =lf hold # # # # r> base ! #> ;m
+:m c#
+  0 <# base @ >r hex 
+    =lf hold 
+    [char] , hold
+    # # # # 
+    [char] x hold 
+    [char] 0 hold 
+  r> base ! #> ;m
 :m save-hex ( <name> -- )
   parse-word w/o create-file throw
   there 0 do i t@  over >r hex# r> write-file throw =cell +loop
    close-file throw ;m
+:m save-header ( <name> -- )
+  parse-word w/o create-file throw
+  there 0 do i t@ over >r c# r> write-file throw =cell +loop
+  close-file throw ;m
 :m save-target ( <name> -- )
   parse-word w/o create-file throw >r
    tflash there r@ write-file throw r> close-file ;m
@@ -178,8 +190,7 @@ meta.1 +order also definitions
 
 \ --- ---- ---- ---- image generation   ---- ---- ---- ---- --- 
 
-0 t,
-label: entry ( previous three instructions are irrelevant )
+label: entry ( previous instructions are irrelevant )
 0 t,  \ entry point to virtual machine
 
    0 tvar @0        \ must contain `0`
@@ -206,8 +217,10 @@ TERMBUF =buf + constant =tbufend
 : ++sp {sp} iLOAD-C -vcell iADD {sp} iSTORE-C ;
 : --rp {rp} iLOAD-C -vcell iADD {rp} iSTORE-C ;
 : ++rp {rp} iLOAD-C  vcell iADD {rp} iSTORE-C ;
-: flags? one iGET ; \ Get CPU flags
-: flags! one iSET ; \ Set CPU flags
+: flags? 1 iGET ; \ Get CPU flags
+: flags! 1 iSET ; \ Set CPU flags
+: pc@ 0 iGET ; \ Get Program Counter
+: pc! 0 iSET ; \ Store Accumulator to Program counter
 : halt! flgHlt iLITERAL flags! ; \ Halt system
 
 \ --- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- --- 
@@ -224,7 +237,7 @@ label: vm ( The Forth virtual machine )
   t iSTORE-C          \ store it in `t`
   one iADD ip iSTORE-C  \ add 1 to it, stored it back to `ip`
   t iLOAD-C           \ load back original `ip` value from `t`
-  zero iSET           \ jump to next token by setting `pc`
+  pc!                 \ jump to next token by setting `pc`
 
 :m a: ( "name" -- : assembly only routine, no header )
   CAFED00D
@@ -245,16 +258,16 @@ a: execute ( xt -- : execute an execution token! )
   t iLOAD-C
   one iRSHIFT
   (a); ( fall-through to {nest} )
-( fn call: accm. must contain `zero iGET` prior to call )
+( fn call: accm. must contain `0 iGET` prior to call )
 label: {nest} 
-  t iSTORE-C ( store `zero iGET` into working pointer )
+  t iSTORE-C ( store `0 iGET` into working pointer )
   ++rp
   ip iLOAD-C
   {rp} iSTORE
   t iLOAD-C
   two iADD
   ip iSTORE-C
-  vm branch
+  vm branch \ N.B. It would be fast to fall-through to vm
 
 a: exit ( -- : exit from current function ) 
 label: {unnest} ( return from function call )
@@ -266,11 +279,11 @@ label: .rdrop
   --rp
   a; 
 
-:m nest zero iGET {nest} branch ;m
+:m nest pc@ {nest} branch ;m
 :m unnest {unnest} branch ;m
 :m =nest {nest} call ;m
 :m =unnest {unnest} call ;m
-:m =0iGET F000 zero or ;m
+:m =0iGET F000 ;m
 
 :m :h ( "name" -- : forth only routine )
   get-current >r target.1 set-current create
@@ -818,6 +831,7 @@ hvar #h          ( -- a : dictionary pointer )
 there tv' #h t!
 atlast tv' #last t!
 save-hex bit.hex
+save-header bit.inc
 save-target bit.bin
 .stat
 .end

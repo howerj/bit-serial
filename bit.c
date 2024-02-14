@@ -1,8 +1,8 @@
-/* PROJECT: Bit-Serial CPU simulator
- * AUTHOR:  Richard James Howe
- * EMAIL:   howe.r.j.89@gmail.com
- * REPO:    https://github.com/howerj/bit-serial
- * LICENSE: MIT */
+#define BIT_PROJECT "Bit-Serial CPU Simulator"
+#define BIT_AUTHOR  "Richard James Howe"
+#define BIT_EMAIL   "howe.r.j.89@gmail.com"
+#define BIT_REPO    "https://github.com/howerj/bit-serial"
+#define BIT_LICENSE "MIT"
 #ifdef __unix__
 #include <sys/select.h>
 #include <sys/ioctl.h>
@@ -12,6 +12,7 @@
 #define _POSIX_C_SOURCE 199309L
 #endif
 #include <assert.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -20,18 +21,34 @@
 #include <string.h>
 #include <time.h>
 
-#define MSIZE       (8192u)
-#define ESCAPE      (27)
+#define MSIZE (8192u)
+#define ESCAPE (27)
+
+#ifndef CONFIG_BIT_SLEEP_EVERY_X_CYCLES
+#define CONFIG_BIT_SLEEP_EVERY_X_CYCLES (64 * 1024)
+#endif
+
+#ifndef CONFIG_BIT_SLEEP_PERIOD_MS
+#define CONFIG_BIT_SLEEP_PERIOD_MS (5)
+#endif
+
+#ifndef CONFIG_BIT_IO_IS_BLOCKING
+#define CONFIG_BIT_IO_IS_BLOCKING (1)
+#endif
+
+#ifndef CONFIG_BIT_INCLUDE_DEFAULT_IMAGE
+#define CONFIG_BIT_INCLUDE_DEFAULT_IMAGE (1)
+#endif
 
 typedef uint16_t mw_t; /* machine word */
 
 typedef struct {
 	mw_t pc, acc, flg, m[MSIZE];
-	FILE *in, *out, *debug;
+	FILE *in, *out, *err;
 	mw_t ch, leds, switches;
-	long done, sleep_ms, sleep_every;
+	long done, blocking, command, debug, tron, step, bp1, sleep_ms, sleep_every;
 #ifdef __unix__
-	struct termios oldattr; /* ugly, but needed for Unix only */
+	struct termios newattr, oldattr; /* ugly, but needed for Unix only */
 #endif
 } bcpu_t;
 
@@ -58,10 +75,17 @@ static void os_sleep_ms(bcpu_t *b, unsigned ms) {
 	sleep_us(ms * 1000ul);
 }
 
+static int unix_nonblocking_off(bcpu_t *b) {
+	assert(b);
+	assert(b->in);
+	const int fd = fileno(b->in);
+	return b->blocking || !isatty(fd);
+}
+
 static int os_kbhit(bcpu_t *b) {
 	assert(b);
 	const int fd = fileno(b->in);
-	if (!isatty(fd))
+	if (unix_nonblocking_off(b))
 		return 1;
 	int bytes = 0;
 	ioctl(fd, FIONREAD, &bytes);
@@ -71,23 +95,35 @@ static int os_kbhit(bcpu_t *b) {
 static int os_init(bcpu_t *b) {
 	assert(b);
 	const int fd = fileno(b->in);
-	if (!isatty(fd))
+	if (unix_nonblocking_off(b))
 		return 0;
 	if (tcgetattr(fd, &b->oldattr) < 0)
 		return -1;
-	struct termios newattr = b->oldattr;
-	newattr.c_iflag &= ~(ICRNL);
-	newattr.c_lflag &= ~(ICANON | ECHO);
-	if (tcsetattr(fd, TCSANOW, &newattr) < 0)
+	b->newattr = b->oldattr;
+	b->newattr.c_iflag &= ~(ICRNL);
+	b->newattr.c_lflag &= ~(ICANON | ECHO);
+	if (tcsetattr(fd, TCSANOW, &b->newattr) < 0)
 		return -2;
 	return 0;
 }
 
-static int os_deinit(bcpu_t *b) {
-	assert(b);
-	if (!isatty(fileno(b->in)))
+static int os_raw(bcpu_t *b) { 
+	assert(b); 
+	if (unix_nonblocking_off(b))
+		return 0;
+	return tcsetattr(fileno(b->in), TCSANOW, &b->newattr) < 0 ? -1 : 0;
+}
+
+static int os_cooked(bcpu_t *b) { 
+	assert(b); 
+	if (unix_nonblocking_off(b))
 		return 0;
 	return tcsetattr(fileno(b->in), TCSANOW, &b->oldattr) < 0 ? -1 : 0;
+}
+
+static int os_deinit(bcpu_t *b) {
+	assert(b);
+	return os_cooked(b);
 }
 #else
 #ifdef _WIN32
@@ -99,35 +135,33 @@ static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); } /* WTF? 
 static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); Sleep(ms); }
 static int os_init(bcpu_t *b) { assert(b); return 0; }
 static int os_deinit(bcpu_t *b) { assert(b); return 0; }
+static int os_raw(bcpu_t *b) { assert(b); return 0; }
+static int os_cooked(bcpu_t *b) { assert(b); return 0; }
+
 #else
 static int os_kbhit(bcpu_t *b) { assert(b); return 1; }
 static int os_getch(bcpu_t *b) { assert(b); return fgetc(b->in); }
 static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); (void)ms; }
 static int os_init(bcpu_t *b) { assert(b); return 0; }
 static int os_deinit(bcpu_t *b) { assert(b); return 0; }
+static int os_raw(bcpu_t *b) { assert(b); return 0; }
+static int os_cooked(bcpu_t *b) { assert(b); return 0; }
 #endif
 #endif /** __unix__ **/
-
-static int debug_on(bcpu_t *b) {
-	assert(b);
-	return b->debug != NULL;
-}
-
-static int print_registers(bcpu_t *b, unsigned count, uint16_t pc, uint16_t acc, uint16_t instr, uint16_t flg) {
-	assert(b);
-	if (!debug_on(b))
-		return 0;
-	FILE *o = b->debug;
-	if (fprintf(o, "CYC:%08X PC=%04X AC=%04X IN=%04X FL=%04X\n", count, pc, acc, instr, flg) < 0)
-		return -1;
-	return 0;
-}
 
 static int wrap_getch(bcpu_t *b) {
 	assert(b);
 	const int ch = os_getch(b);
-	if ((ch == ESCAPE) || (ch < 0))
+	if (ch == ESCAPE) {
+		if (b->debug) {
+			b->command = 1;
+			return ch; /* cannot eliminate returned char... */
+		} else {
+			b->done = 1;
+		}
+	} else if (ch < 0) {
 		b->done = 1;
+	}
 	return ch;
 }
 
@@ -189,22 +223,120 @@ static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	}
 }
 
+static inline void rload(bcpu_t *b, uint16_t *pc, uint16_t *acc, uint16_t *flg) {
+	assert(b);
+	assert(pc);
+	assert(acc);
+	assert(flg);
+	*pc = b->pc;
+	*acc = b->acc;
+	*flg = b->flg;
+}
+
+static inline void rsave(bcpu_t *b, uint16_t pc, uint16_t acc, uint16_t flg) {
+	assert(b);
+	b->pc = pc;
+	b->acc = acc;
+	b->flg = flg;
+}
+
+static const char *dis(const uint16_t instr) {
+	uint16_t cmd = instr >> 12;
+	const char *r = NULL;
+	switch (cmd) {
+	case 0x0: r = " OR"; break; case 0x1: r = "AND"; break;
+	case 0x2: r = "XOR"; break; case 0x3: r = "ADD"; break;
+	case 0x4: r = "LSH"; break; case 0x5: r = "RSH"; break;
+	case 0x6: r = "LDI"; break; case 0x7: r = "STI"; break;
+	case 0x8: r = "LDC"; break; case 0x9: r = "STC"; break;
+	case 0xA: r = "LIT"; break; case 0xB: r = "XXX"; break;
+	case 0xC: r = "JMP"; break; case 0xD: r = "JPZ"; break;
+	case 0xE: r = instr & 1 ? "SFG" : "SPC"; break; 
+	case 0xF: r = instr & 1 ? "GFG" : "GPC"; break;
+	}
+	assert(r);
+	return r;
+}
+
+static void flags(uint16_t flg, char buf[static 16 + 1]) {
+	const char off = '-';
+	buf[0] = flg & (1 << fHLT) ? 'H' : off;
+	buf[1] = flg & (1 << fR)   ? 'R' : off;
+	buf[2] = flg & (1 << fNg)  ? 'N' : off;
+	buf[3] = flg & (1 << fZ)   ? 'Z' : off;
+	buf[4] = flg & (1 << fCy)  ? 'C' : off;
+	buf[5] = 0;
+}
+
+static int command(bcpu_t *b, uint16_t *pc, uint16_t *acc, uint16_t *flg) {
+	assert(b);
+	assert(pc);
+	assert(acc);
+	assert(flg);
+	rsave(b, *pc, *acc, *flg);
+	static const char *help = "Debug Command Prompt Help\n\n\
+\th       : print this help message\n\
+\tq       : quit system\n\
+\tt       : toggle tracing (default = off)\n\
+\ts       : toggle single step (default = off)\n\
+\tb <HEX> : set break point to hex value\n\
+\tk       : clear tracing, single step and break point\n\
+\tc       : continue\n\
+\n";
+	char cmd = 0;
+	if (os_cooked(b) < 0) return -1;
+	if (b->pc == b->bp1)
+		if (fprintf(b->err, "BREAK\r\n") < 0)
+			return -1;
+	if (fprintf(b->err, "DBG:%04X> ", b->pc) < 0)
+		return -1;
+	if (fscanf(b->in, "%c", &cmd) == 1) {
+		switch (cmd) { /* We could add more commands if needed to assembly, hexdump, etcetera, much like DEBUG.COM from MS-DOS */
+		case 'h': if (fputs(help, b->err) < 0) return -1; break; 
+		case 'q': b->done = 1; break;
+		case 't': b->tron = !b->tron; break;
+		case 's': b->step = !b->step; break;
+		case 'b': { b->bp1 = -1; if (fscanf(b->in, "%lx", &b->bp1) == 1) { fprintf(b->err, " break set: %lX", b->bp1); } } break;
+		case 'k': b->tron = 0; b->step = 0; b->bp1 = -1; break;
+		case 'c': b->step = 0; break;
+		case '\n': case '\r': break;
+		default: if (fprintf(b->err, "invalid command '%c'\r\n", cmd) < 0) return -1; break;
+		}
+		if (fprintf(b->err, "\r\n") < 0)
+			return -1;
+	}
+	b->command = b->step;
+	if (os_raw(b) < 0) return -1;
+	rload(b, pc, acc, flg);
+	return 0;
+}
+
 static int bcpu(bcpu_t *b) {
 	assert(b);
 	int r = 0;
-	mw_t * const m = b->m, pc = b->pc, acc = b->acc, flg = b->flg;
+	mw_t * const m = b->m, pc = 0, acc = 0, flg = 0;
+	rload(b, &pc, &acc, &flg);
 
 	for (unsigned count = 0; b->done == 0; count++) {
-		if ((b->sleep_every && (count % b->sleep_every) == 0) && b->sleep_ms > 0)
+		if ((b->sleep_every > 0 && (count % b->sleep_every) == 0) && b->sleep_ms > 0)
 			os_sleep_ms(b, b->sleep_ms);
 
-		const mw_t instr = m[pc++ % MSIZE];
+		const mw_t instr = m[pc % MSIZE];
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 
-		if (print_registers(b, count, pc, acc, instr, flg) < 0) {
-			r = -1;
-			goto halt;
+		flg &= ~((1u << fZ) | (1u << fNg)); /* clear zero/negative flags */
+		flg |= ((!acc) << fZ);              /* set zero flag     */
+		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
+
+		if (b->command || pc == b->bp1)
+			if (command(b, &pc, &acc, &flg) < 0)
+				return -1;
+		if (b->tron) {
+			char sflag[16 + 1];
+			flags(flg, sflag);
+			if (fprintf(b->err, "PC=%04X AC=%04X %s:%04X %s:%04X\n", pc, acc, dis(instr), instr, sflag, flg) < 0)
+				return -1;
 		}
 
 		if (flg & (1u << fHLT))
@@ -216,13 +348,9 @@ static int bcpu(bcpu_t *b) {
 			continue;
 		}
 
-		flg &= ~((1u << fZ) | (1u << fNg)); /* clear zero/negative flags */
-		flg |= ((!acc) << fZ);              /* set zero flag     */
-		flg |= ((!!(acc & 0x8000)) << fNg); /* set negative flag */
-
-		const int indirect = cmd & 0x8;
-		const mw_t lop = indirect ? op1 : bload(b, op1);
-
+		const int direct = cmd & 0x8;
+		const mw_t lop = direct ? op1 : bload(b, op1);
+		pc++;
 		switch (cmd) {
 		case 0x0: acc |= lop;                            break; /* OR      */
 		case 0x1: acc &= lop;                            break; /* AND     */
@@ -247,35 +375,66 @@ static int bcpu(bcpu_t *b) {
 		}
 	}
 halt:
-	b->pc  = pc;
-	b->acc = acc;
-	b->flg = flg;
+	rsave(b, pc, acc, flg);
 	return r;
 }
 
 int main(int argc, char **argv) {
-	static bcpu_t b = { .flg = 1u << fZ, .sleep_ms = 5, .sleep_every = 64 * 1024, };
-	if (argc != 2) {
-		(void)fprintf(stderr, "Usage: %s prog.hex\n", argv[0]);
-		return 1;
-	}
+	static bcpu_t b = { 
+		.flg         = 1u << fZ, 
+		.bp1         = -1,
+		.sleep_every = CONFIG_BIT_SLEEP_EVERY_X_CYCLES,
+		.m = {
+#ifdef CONFIG_BIT_INCLUDE_DEFAULT_IMAGE
+#include "bit.inc"
+#endif
+		},
+	};
 	b.in    = stdin;
 	b.out   = stdout;
-	/*b.debug = stderr;*/
-	FILE *in = fopen(argv[1], "rb");
-	if (!in)
-		return 2;
-	for (size_t i = 0; i < MSIZE; i++) {
-		unsigned pc = 0;
-		if (fscanf(in, "%x", &pc) != 1)
-			break;
-		b.m[i] = pc;
-	}
-	if (os_init(&b) < 0)
-		return 3;
+	b.err   = stderr;
+	b.tron  = !!getenv("TRACE");
+	b.debug = !!getenv("DEBUG");
+	b.command = b.debug;
+	b.blocking = !!getenv("BLOCK");
+	b.sleep_ms = getenv("WAKE") ? 0 : CONFIG_BIT_SLEEP_PERIOD_MS;
 	setbuf(stdin,  NULL);
 	setbuf(stdout, NULL);
 	setbuf(stderr, NULL);
+
+	if (argc != 2 && (CONFIG_BIT_INCLUDE_DEFAULT_IMAGE && !getenv("DEFAULT"))) {
+		const char *fmt = "Usage: %s prog.hex\n\n\
+Project: " BIT_PROJECT "\n\
+Author:  " BIT_AUTHOR "\n\
+Email:   " BIT_EMAIL "\n\
+Repo:    " BIT_REPO  "\n\
+License: " BIT_LICENSE "\n\n\
+This program returns zero on success and non-zero on failure.\n\n\
+Environment Variables:\n\n\
+\tTRACE   - if set turn tracing on\n\
+\tDEBUG   - if set hit escape to enter debug mode ('h' lists commands)\n\
+\tBLOCK   - turn blocking input on (default is non-blocking)\n\
+\tDEFAULT - use built in default image\n\
+\tWAKE    - turn sleeping every X cycles off\n\n";
+		(void)fprintf(stderr, fmt, argv[0]);
+		return 1;
+	}
+	if (argc > 1) {
+		FILE *in = fopen(argv[1], "rb");
+		if (!in) {
+			(void)fprintf(stderr, "Could not open file '%s' for reading: %s\n", argv[1], strerror(errno));
+			return 2;
+		}
+		for (size_t i = 0; i < MSIZE; i++) {
+			unsigned v = 0;
+			if (fscanf(in, "%x", &v) != 1)
+				break;
+			b.m[i] = v;
+		}
+	}
+
+	if (os_init(&b) < 0)
+		return 3;
 	const int r = bcpu(&b) < 0 ? 4 : 0;
 	if (os_deinit(&b) < 0)
 		return 5;

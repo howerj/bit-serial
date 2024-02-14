@@ -319,7 +319,7 @@ begin
 			end if;
 		-- INDIRECT is only used for instructions that allow for indirection
 		-- (i.e. All those instructions in which the top bit is not set).
-		-- The indirection add 2*(N+1) cycles to the instruction so is quite expensive.
+		-- The indirection adds 2*(N+1) cycles to the instruction so is quite expensive.
 		--
 		-- We could avoid having this state and CPU functionality if we were to
 		-- make use of self-modifying code, however that would make programming the CPU

@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -std=c99 -O2
+CFLAGS=-Wall -Wextra -std=c99 -O3 -fwrapv
 USB?=/dev/ttyUSB0
 BAUD?=115200
 DIFF?=vimdiff

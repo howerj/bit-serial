@@ -420,6 +420,50 @@ different version made with 7400 series logic gates
 See <https://github.com/leros-dev/leros>,
 also <https://github.com/schoeberl/lipsi>,
 
+# Future directions
+
+There are infinite combinations of different features and CPU
+instructions that could be played with, one which might be more
+compact is describe below (the best way to see if it is is to try
+to implement it in hardware which has not been done yet).
+
+Each instruction would be 16-bits, 4 bits for the instruction,
+12 bits for an operand. This would be another accumulator
+machine, where all instructions would operate on the accumulator
+(apart from JMP and JMPZ).
+
+Topmost bit indicates an indirection bit, where contents of the
+memory location specified by the operand are used instead of the
+operand are used.
+
+8 Instructions (16 if indirect variants included)
+
+* ADD [optional CARRY <- ACC + OPERAND + CARRY]
+* AND [optional CARRY <- 0]
+* XOR [optional CARRY <- 0]
+* ROTATE (rotate left likely most efficient)
+* LOAD
+* STORE
+* JMP [optional ACC <- PC]
+* JMPZ  [optional ACC <- PC]
+
+Missing are:
+
+* A Timer
+* A way to reset the CPU (perhaps JMPZ to 8XXX)
+* A way to halt the CPU (perhaps JMP to 8XXX)
+
+Hopefully the instruction set would be smaller than this one
+and allow for a more compact Forth (indirect adding would allow 
+shorter stack increment routines so long as the carry was option was 
+disabled).
+
+Many features could be optionally enabled in the VHDL.
+
+Note that AND/XOR are not universal when combined, except if
+you have a source of truth and falsity, in which case you can
+use XOR to invert bits.
+
 # References / Appendix
 
 The state-machine diagram was made using [Graphviz][], and can be viewed and
@@ -429,7 +473,7 @@ edited immediately by copying the following text into [GraphvizOnline][].
 	digraph bcpu {
 		reset -> fetch [label="start"]
 		fetch -> execute
-		fetch -> indirect [label="flag(IND) = '1'\n and op < 8"]
+		fetch -> indirect [label="op < 8"]
 		fetch -> reset  [label="flag(RST) = '1'"]
 		fetch -> halt  [label="flag(HLT) = '1'"]
 		indirect -> operand

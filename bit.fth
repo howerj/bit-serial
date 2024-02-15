@@ -143,7 +143,8 @@ size =cell - tep !
 :m compile-only tlast @ tnfa t@ $20 or tlast @ tnfa t! ;m
 :m immediate    tlast @ tnfa t@ $40 or tlast @ tnfa t! ;m
 :m t' ' >body @ ;m ( address of word )
-:m tv' t' =cell + =cell + =cell + ;m ( address of variable )
+:m >tbody =cell + =cell + =cell + ;m
+:m tv' t' >tbody ;m ( address of variable )
 :m t2/ 2/ ;m
 
 : iOR      0000 or t, ;
@@ -196,6 +197,7 @@ label: entry ( previous instructions are irrelevant )
    0 tvar @0        \ must contain `0`
    1 tvar @1        \ must contain `1`
    2 tvar @2        \ must contain `2`
+  10 tvar @16       \ must contain `16`
 FFFF tvar set       \ all bits set, -1
    0 tvar <cold>    \ entry point of virtual machine, set later
 
@@ -221,7 +223,7 @@ TERMBUF =buf + constant =tbufend
 : flags! 1 iSET ; \ Set CPU flags
 : pc@ 0 iGET ; \ Get Program Counter
 : pc! 0 iSET ; \ Store Accumulator to Program counter
-: halt! flgHlt iLITERAL flags! ; \ Halt system
+: halt! @16 iLOAD-C flags! ; \ Halt system
 
 \ --- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- --- 
 

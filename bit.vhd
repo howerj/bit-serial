@@ -25,6 +25,11 @@ use std.textio.all; -- for debug only, not needed for synthesis
 -- and instructions themselves. It should not be thought that this design
 -- is optimal, it is quite small however.
 --
+-- One way to optimize this would be directly instantiate individual
+-- LUTs, which would make the CPU FPGA family specific, see
+-- <https://www.fpgarelated.com/showarticle/797.php> or "Inside the 
+-- Spartan-6: Using LUTs to optimize circuits Victor Yurkovsky, June 24, 2015".
+--
 entity bcpu is
 	generic (
 		asynchronous_reset: boolean    := true;   -- use asynchronous reset if true, synchronous if false

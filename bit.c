@@ -25,7 +25,7 @@
 #define ESCAPE (27)
 
 #ifndef CONFIG_BIT_SLEEP_EVERY_X_CYCLES
-#define CONFIG_BIT_SLEEP_EVERY_X_CYCLES (64 * 1024)
+#define CONFIG_BIT_SLEEP_EVERY_X_CYCLES /*(64 * 1024)*/(0)
 #endif
 
 #ifndef CONFIG_BIT_SLEEP_PERIOD_MS
@@ -46,13 +46,22 @@ typedef struct {
 	mw_t pc, acc, flg, m[MSIZE];
 	FILE *in, *out, *err;
 	mw_t ch, leds, switches;
-	long done, blocking, command, debug, tron, step, bp1, sleep_ms, sleep_every;
+	long done, bp1, sleep_ms, sleep_every;
+	int error, blocking, command, debug, tron, step;
 #ifdef __unix__
 	struct termios newattr, oldattr; /* ugly, but needed for Unix only */
 #endif
 } bcpu_t;
 
 enum { fCy, fZ, fNg, fR, fHLT, };
+
+static int handler(bcpu_t *b, int code) {
+	if (b->error == 0)
+		b->error = code;
+	return b->error;
+}
+
+#define error(B) handler((B), -__LINE__)
 
 #ifdef __unix__ /* unix junk... */
 extern int fileno(FILE *file);
@@ -87,6 +96,7 @@ static int os_kbhit(bcpu_t *b) {
 	const int fd = fileno(b->in);
 	if (unix_nonblocking_off(b))
 		return 1;
+	os_sleep_ms(b, CONFIG_BIT_SLEEP_PERIOD_MS);
 	int bytes = 0;
 	ioctl(fd, FIONREAD, &bytes);
 	return !!bytes;
@@ -98,12 +108,12 @@ static int os_init(bcpu_t *b) {
 	if (unix_nonblocking_off(b))
 		return 0;
 	if (tcgetattr(fd, &b->oldattr) < 0)
-		return -1;
+		return error(b);
 	b->newattr = b->oldattr;
 	b->newattr.c_iflag &= ~(ICRNL);
 	b->newattr.c_lflag &= ~(ICANON | ECHO);
 	if (tcsetattr(fd, TCSANOW, &b->newattr) < 0)
-		return -2;
+		return error(b);
 	return 0;
 }
 
@@ -169,7 +179,7 @@ static int wrap_putch(bcpu_t *b, const int ch) {
 	assert(b);
 	const int r = fputc(ch, b->out);
 	if (fflush(b->out) < 0)
-		return -1;
+		return error(b);
 	return r;
 }
 
@@ -258,7 +268,7 @@ static const char *dis(const uint16_t instr) {
 	return r;
 }
 
-static void flags(uint16_t flg, char buf[static 16 + 1]) {
+static char *flags(uint16_t flg, char buf[static 16 + 1]) {
 	const char off = '-';
 	buf[0] = flg & (1 << fHLT) ? 'H' : off;
 	buf[1] = flg & (1 << fR)   ? 'R' : off;
@@ -266,6 +276,7 @@ static void flags(uint16_t flg, char buf[static 16 + 1]) {
 	buf[3] = flg & (1 << fZ)   ? 'Z' : off;
 	buf[4] = flg & (1 << fCy)  ? 'C' : off;
 	buf[5] = 0;
+	return buf;
 }
 
 static int command(bcpu_t *b, uint16_t *pc, uint16_t *acc, uint16_t *flg) {
@@ -277,41 +288,81 @@ static int command(bcpu_t *b, uint16_t *pc, uint16_t *acc, uint16_t *flg) {
 	static const char *help = "Debug Command Prompt Help\n\n\
 \th       : print this help message\n\
 \tq       : quit system\n\
-\tt       : toggle tracing (default = off)\n\
-\ts       : toggle single step (default = off)\n\
+\tt       : set tracing on (default = on)\n\
+\ts       : set single step on (default = on)\n\
 \tb <HEX> : set break point to hex value\n\
 \tk       : clear tracing, single step and break point\n\
 \tc       : continue\n\
+\tr       : set reset flag\n\
+\tj <HEX> : jump to address\n\
+\td <X:Y> : hex dump from `X` for `Y` words\n\
+\t?       : print system state\n\
+\t@ <HEX> : load *word not byte* address\n\
+\t! <X:Y> : store `Y` at *word address not byte address* `X`\n\
 \n";
-	char cmd = 0;
-	if (os_cooked(b) < 0) return -1;
+again: 
+	{
+	char line[64] = { 0, }, cmd[2] = { 0, };
+	long arg1 = 0, arg2 = 0, argc = 0;
+	if (os_cooked(b) < 0) 
+		return error(b);
 	if (b->pc == b->bp1)
 		if (fprintf(b->err, "BREAK\r\n") < 0)
-			return -1;
+			return error(b);
+	if (feof(b->in)) {
+		b->done = 1;
+		return 0;
+	}
 	if (fprintf(b->err, "DBG:%04X> ", b->pc) < 0)
-		return -1;
-	if (fscanf(b->in, "%c", &cmd) == 1) {
-		switch (cmd) { /* We could add more commands if needed to assembly, hexdump, etcetera, much like DEBUG.COM from MS-DOS */
-		case 'h': if (fputs(help, b->err) < 0) return -1; break; 
+		return error(b);
+	if (!fgets(line, sizeof(line), b->in))
+		return 0;
+	if ((argc = sscanf(line, "%1s %lx:%lx", cmd, &arg1, &arg2)) >= 1) {
+		switch (cmd[0]) { /* Could add: assemble instructions, save to file,  etcetera, much like DEBUG.COM from MS-DOS */
+		case 'h': if (fputs(help, b->err) < 0) return error(b); goto again;
 		case 'q': b->done = 1; break;
-		case 't': b->tron = !b->tron; break;
-		case 's': b->step = !b->step; break;
-		case 'b': { b->bp1 = -1; if (fscanf(b->in, "%lx", &b->bp1) == 1) { fprintf(b->err, " break set: %lX", b->bp1); } } break;
-		case 'k': b->tron = 0; b->step = 0; b->bp1 = -1; break;
+		case 't': b->tron = 1; goto again;
+		case 's': b->step = 1; break;
+		case 'b': b->bp1 = argc > 1 ? arg1 : -1; if (fprintf(b->err, " break set: %lX\r\n", b->bp1) < 0) return error(b); goto again;
+		case 'k': b->tron = 0; b->step = 0; b->bp1 = -1; goto again;
 		case 'c': b->step = 0; break;
-		case '\n': case '\r': break;
-		default: if (fprintf(b->err, "invalid command '%c'\r\n", cmd) < 0) return -1; break;
+		case 'r': b->flg |= 1 << fR; goto again;
+		case 'j': b->pc = argc > 1 ? arg1 : 0; goto again;
+		case '@': if (fprintf(b->err, "%04X\r\n", bload(b, arg1)) < 0) return error(b); goto again;
+		case '!': bstore(b, arg1, arg2); goto again; /* Example: "! 4001:2058" */
+		case '?': if (fprintf(b->err, "PC:%04X AC:%04X FL:%04X TRON:%d STEP:%d BLOCK:%d BP:%ld SLEEP-MS:%ld SLEEP-EVERY:%ld SW:%d LED:%d\r\n", 
+				b->pc, b->acc, b->flg, b->tron, b->step, b->blocking, b->bp1, b->sleep_ms, b->sleep_every, b->switches, b->leds) < 0)
+				return error(b);
+			goto again;
+		case 'd': {
+			const long start = argc < 3 ? b->pc : arg1;
+			const long length = argc < 3 ? arg1 : arg2;
+			for (long i = 0, j = 0; i < length; i++, j++) {
+				if (fprintf(b->err, "%04X ", b->m[(i + start) % MSIZE]) < 0)
+					return error(b);
+				if (j > 7) {
+					if (fprintf(b->err, "\r\n") < 0)
+						return error(b);
+					j = 0;
+				}
+			}
+			if (fprintf(b->err, "\r\n") < 0)
+				return error(b);
+		} goto again;
+		case '\n': case '\r': case ' ': break;
+		default: if (fprintf(b->err, "invalid command '%s'\r\n", cmd) < 0) return error(b); break;
 		}
 		if (fprintf(b->err, "\r\n") < 0)
-			return -1;
+			return error(b);
+	}
 	}
 	b->command = b->step;
-	if (os_raw(b) < 0) return -1;
+	if (os_raw(b) < 0) return error(b);
 	rload(b, pc, acc, flg);
 	return 0;
 }
 
-static int bcpu(bcpu_t *b) {
+static inline int bcpu(bcpu_t *b) {
 	assert(b);
 	int r = 0;
 	mw_t * const m = b->m, pc = 0, acc = 0, flg = 0;
@@ -321,7 +372,7 @@ static int bcpu(bcpu_t *b) {
 		if ((b->sleep_every > 0 && (count % b->sleep_every) == 0) && b->sleep_ms > 0)
 			os_sleep_ms(b, b->sleep_ms);
 
-		const mw_t instr = m[pc % MSIZE];
+		const mw_t instr = m[pc % MSIZE]; /* This should probably be a `bload` */
 		const mw_t op1   = instr & 0x0FFF;
 		const mw_t cmd   = (instr >> 12u) & 0xFu;
 
@@ -331,13 +382,12 @@ static int bcpu(bcpu_t *b) {
 
 		if (b->command || pc == b->bp1)
 			if (command(b, &pc, &acc, &flg) < 0)
-				return -1;
-		if (b->tron) {
-			char sflag[16 + 1];
-			flags(flg, sflag);
-			if (fprintf(b->err, "PC=%04X AC=%04X %s:%04X %s:%04X\n", pc, acc, dis(instr), instr, sflag, flg) < 0)
-				return -1;
-		}
+				return error(b);
+		if (b->done)
+			break;
+		if (b->tron)
+			if (fprintf(b->err, "PC:%04X AC:%04X %s:%04X %s:%04X\n", pc, acc, dis(instr), instr, flags(flg, (char[17]){0,}), flg) < 0)
+				return error(b);
 
 		if (flg & (1u << fHLT))
 			goto halt;
@@ -364,7 +414,7 @@ static int bcpu(bcpu_t *b) {
 
 		case 0x8: acc = bload(b, lop);                   break; /* LOAD-C  */
 		case 0x9: bstore(b, lop, acc);                   break; /* STORE-C */
-		case 0xA: acc = lop;                             break; /* LITERAL */
+		case 0xA: acc = lop; /* unused...*/              break; /* LITERAL */
 		case 0xB:                                        break; /* UNUSED  */
 
 		case 0xC: pc = lop;                              break; /* JUMP    */
@@ -396,6 +446,8 @@ int main(int argc, char **argv) {
 	b.tron  = !!getenv("TRACE");
 	b.debug = !!getenv("DEBUG");
 	b.command = b.debug;
+	b.step    = b.debug;
+	b.tron    = b.tron ? b.tron : b.debug;
 	b.blocking = !!getenv("BLOCK");
 	b.sleep_ms = getenv("WAKE") ? 0 : CONFIG_BIT_SLEEP_PERIOD_MS;
 	setbuf(stdin,  NULL);

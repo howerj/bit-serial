@@ -96,7 +96,8 @@ static int os_kbhit(bcpu_t *b) {
 	const int fd = fileno(b->in);
 	if (unix_nonblocking_off(b))
 		return 1;
-	os_sleep_ms(b, CONFIG_BIT_SLEEP_PERIOD_MS);
+	if (b->sleep_ms)
+		os_sleep_ms(b, b->sleep_ms);
 	int bytes = 0;
 	ioctl(fd, FIONREAD, &bytes);
 	return !!bytes;
@@ -290,7 +291,7 @@ static int command(bcpu_t *b, uint16_t *pc, uint16_t *acc, uint16_t *flg) {
 \tq       : quit system\n\
 \tt       : set tracing on (default = on)\n\
 \ts       : set single step on (default = on)\n\
-\tb <HEX> : set break point to hex value\n\
+\tb <HEX> : set break point to hex value (single bp only)\n\
 \tk       : clear tracing, single step and break point\n\
 \tc       : continue\n\
 \tr       : set reset flag\n\
@@ -298,8 +299,7 @@ static int command(bcpu_t *b, uint16_t *pc, uint16_t *acc, uint16_t *flg) {
 \td <X:Y> : hex dump from `X` for `Y` words\n\
 \t?       : print system state\n\
 \t@ <HEX> : load *word not byte* address\n\
-\t! <X:Y> : store `Y` at *word address not byte address* `X`\n\
-\n";
+\t! <X:Y> : store `Y` at *word address not byte address* `X`\n\n";
 again: 
 	{
 	char line[64] = { 0, }, cmd[2] = { 0, };
@@ -330,7 +330,8 @@ again:
 		case 'j': b->pc = argc > 1 ? arg1 : 0; goto again;
 		case '@': if (fprintf(b->err, "%04X\r\n", bload(b, arg1)) < 0) return error(b); goto again;
 		case '!': bstore(b, arg1, arg2); goto again; /* Example: "! 4001:2058" */
-		case '?': if (fprintf(b->err, "PC:%04X AC:%04X FL:%04X TRON:%d STEP:%d BLOCK:%d BP:%ld SLEEP-MS:%ld SLEEP-EVERY:%ld SW:%d LED:%d\r\n", 
+		case '?': if (fprintf(b->err, 
+				"PC:%04X AC:%04X FL:%04X TRON:%d STEP:%d BLOCK:%d BP:%ld SLEEP-MS:%ld SLEEP-EVERY:%ld SW:%d LED:%d\r\n", 
 				b->pc, b->acc, b->flg, b->tron, b->step, b->blocking, b->bp1, b->sleep_ms, b->sleep_every, b->switches, b->leds) < 0)
 				return error(b);
 			goto again;
@@ -414,14 +415,14 @@ static inline int bcpu(bcpu_t *b) {
 
 		case 0x8: acc = bload(b, lop);                   break; /* LOAD-C  */
 		case 0x9: bstore(b, lop, acc);                   break; /* STORE-C */
-		case 0xA: acc = lop; /* unused...*/              break; /* LITERAL */
+		case 0xA: acc = lop;                             break; /* LITERAL */
 		case 0xB:                                        break; /* UNUSED  */
 
 		case 0xC: pc = lop;                              break; /* JUMP    */
 		case 0xD: if (!acc) pc = lop;                    break; /* JUMPZ   */
 		case 0xE: if (lop & 1) flg = acc; else pc = acc; break; /* SET     */
 		case 0xF: acc = lop & 1 ? flg : pc - 1;          break; /* GET     */
-		default: r = -1; goto halt;
+		default: return error(b);
 		}
 	}
 halt:
@@ -431,8 +432,8 @@ halt:
 
 int main(int argc, char **argv) {
 	static bcpu_t b = { 
-		.flg         = 1u << fZ, 
-		.bp1         = -1,
+		.flg = 1u << fZ, 
+		.bp1 = -1,
 		.sleep_every = CONFIG_BIT_SLEEP_EVERY_X_CYCLES,
 		.m = {
 #ifdef CONFIG_BIT_INCLUDE_DEFAULT_IMAGE
@@ -440,14 +441,14 @@ int main(int argc, char **argv) {
 #endif
 		},
 	};
-	b.in    = stdin;
-	b.out   = stdout;
-	b.err   = stderr;
-	b.tron  = !!getenv("TRACE");
+	b.in = stdin;
+	b.out = stdout;
+	b.err = stderr;
+	b.tron = !!getenv("TRACE");
 	b.debug = !!getenv("DEBUG");
 	b.command = b.debug;
-	b.step    = b.debug;
-	b.tron    = b.tron ? b.tron : b.debug;
+	b.step = b.debug;
+	b.tron = b.tron ? b.tron : b.debug;
 	b.blocking = !!getenv("BLOCK");
 	b.sleep_ms = getenv("WAKE") ? 0 : CONFIG_BIT_SLEEP_PERIOD_MS;
 	setbuf(stdin,  NULL);
@@ -484,7 +485,6 @@ Environment Variables:\n\n\
 			b.m[i] = v;
 		}
 	}
-
 	if (os_init(&b) < 0)
 		return 3;
 	const int r = bcpu(&b) < 0 ? 4 : 0;

@@ -143,7 +143,7 @@ size =cell - tep !
 :m compile-only tlast @ tnfa t@ $20 or tlast @ tnfa t! ;m
 :m immediate    tlast @ tnfa t@ $40 or tlast @ tnfa t! ;m
 :m t' ' >body @ ;m ( address of word )
-:m >tbody =cell + =cell + =cell + ;m
+:m >tbody =cell + ( =cell + =cell + ) ;m
 :m tv' t' >tbody ;m ( address of variable )
 :m t2/ 2/ ;m
 
@@ -174,7 +174,9 @@ size =cell - tep !
 : branch 2/ iJUMP ;
 : ?branch 2/ iJUMPZ ;
 : call 2/ ( iJUMP -> ) C000 or ;
-:m postpone t' branch ;m
+: thread 2/ ;
+: thread, thread t, ;
+:m postpone t' thread, ;m
 
 assembler.1 +order also definitions
 : begin there ;
@@ -196,14 +198,15 @@ label: entry ( previous instructions are irrelevant )
 
    0 tvar @0        \ must contain `0`
    1 tvar @1        \ must contain `1`
-   2 tvar @2        \ must contain `2`
   10 tvar @16       \ must contain `16`
+8000 tvar high      \ must contain `8000`
 FFFF tvar set       \ all bits set, -1
    0 tvar <cold>    \ entry point of virtual machine, set later
 
    0 tvar ip        \ instruction pointer
    0 tvar t         \ temporary register
    0 tvar tos       \ top of stack
+   0 tvar primitive \ VM/Forth code divider
  =end              dup tvar {sp0} tvar {sp} \ grows downwards
  =end =stksz 2* -  dup tvar {rp0} tvar {rp} \ grows upwards
  =end =stksz 2* - =buf - constant TERMBUF \ pad buffer space
@@ -212,7 +215,6 @@ TERMBUF =buf + constant =tbufend
 
 : zero @0 2/ ;
 : one @1 2/ ;
-: two @2 2/ ;
 : vcell one ;
 : -vcell set 2/ ;
 : --sp {sp} iLOAD-C  vcell iADD {sp} iSTORE-C ;
@@ -227,7 +229,7 @@ TERMBUF =buf + constant =tbufend
 
 \ --- ---- ---- ---- Forth VM ---- ---- ---- ---- ---- ---- --- 
 
-label: start
+label: start \ Forth VM entry point
   start call entry t! \ Set entry point
   {sp0} iLOAD-C {sp} iSTORE-C \ Set initial v.stk ptr
   {rp0} iLOAD-C {rp} iSTORE-C \ Set initial r.stk ptr
@@ -235,41 +237,35 @@ label: start
   ip iSTORE-C         \ Set instruction pointer to word
   \ -- fall-through --
 label: vm ( The Forth virtual machine )
-  ip iLOAD-C          \ load next instruction from `ip`
-  t iSTORE-C          \ store it in `t`
-  one iADD ip iSTORE-C  \ add 1 to it, stored it back to `ip`
-  t iLOAD-C           \ load back original `ip` value from `t`
-  pc!                 \ jump to next token by setting `pc`
+assembler.1 +order
+  ip iLOAD-C
+  t iSTORE-C
+  one iADD
+  ip iSTORE-C
+  t iLOAD
+primitive 2/ iADD \ subtract location (primitive is negated)
+high 2/ iAND      \ is high bit set?
+  if              \ yes: must be instruction
+    t iLOAD
+    pc!
+  then \ no: must be another Forth word to call
+  ++rp
+  ip iLOAD-C
+  {rp} iSTORE
+  t iLOAD
+  ip iSTORE-C
+  vm branch 
+assembler.1 -order
 
 :m a: ( "name" -- : assembly only routine, no header )
   CAFED00D
   target.1 +order also definitions
   create talign there ,
   assembler.1 +order
-  does> @ branch ;m
+  does> @ thread, ;m
 :m (a); CAFED00D <> if abort" unstructured" then 
   assembler.1 -order ;m
 :m a; (a); vm branch ;m
-
-a: execute ( xt -- : execute an execution token! )
-  tos iLOAD-C
-  t iSTORE-C
-  {sp} iLOAD
-  tos iSTORE-C
-  --sp
-  t iLOAD-C
-  one iRSHIFT
-  (a); ( fall-through to {nest} )
-( fn call: accm. must contain `0 iGET` prior to call )
-label: {nest} 
-  t iSTORE-C ( store `0 iGET` into working pointer )
-  ++rp
-  ip iLOAD-C
-  {rp} iSTORE
-  t iLOAD-C
-  two iADD
-  ip iSTORE-C
-  vm branch \ N.B. It would be fast to fall-through to vm
 
 a: exit ( -- : exit from current function ) 
 label: {unnest} ( return from function call )
@@ -281,32 +277,27 @@ label: .rdrop
   --rp
   a; 
 
-:m nest pc@ {nest} branch ;m
-:m unnest {unnest} branch ;m
-:m =nest {nest} call ;m
-:m =unnest {unnest} call ;m
-:m =0iGET F000 ;m
+:m unnest {unnest} thread, ;m
+:m =unnest {unnest} thread ;m
 
 :m :h ( "name" -- : forth only routine )
   get-current >r target.1 set-current create
   r> set-current CAFEBABE talign there ,
-  nest
-  does> @ branch ( really a call ) ;m
+  does> @ thread, ;m
 
 :m :t ( "name" -- : forth only routine )
   >in @ thead >in !
   get-current >r target.1 set-current create
   r> set-current CAFEBABE talign there ,
-  nest
-  does> @ branch ( really a call ) ;m
+  does> @ thread, ;m
 
 :m :to ( "name" -- : forth only, target only routine )
   >in @ thead >in !
   get-current >r target.only.1 set-current create r> 
   set-current
   there ,
-  nest CAFEBABE
-  does> @ branch ( really a call ) ;m
+  CAFEBABE
+  does> @ thread, ;m
 
 :m structured? CAFEBABE <> if abort" unstructured" then ;
 :m ;t structured? talign unnest target.only.1 -order ;
@@ -351,9 +342,9 @@ a: opNext
 :m lit         opPush t, ;m
 :m [char] char opPush t, ;m
 :m char   char opPush t, ;m
-:m =push  [ t' opPush  ] literal call ;m
-:m =jump  [ t' opJump  ] literal call ;m
-:m =jumpz [ t' opJumpZ ] literal call ;m
+:m =push  [ t' opPush  ] literal t2/ ;m
+:m =jump  [ t' opJump  ] literal t2/ ;m
+:m =jumpz [ t' opJumpZ ] literal t2/ ;m
 :m begin talign there ;m
 :m until talign opJumpZ 2/ t, ;m
 :m again talign opJump  2/ t, ;m
@@ -455,8 +446,8 @@ a: >r ( u -- , R: -- u )
   (a);
 
 :m for talign >r begin ;m
-:m =>r [ t' >r ] literal call ;m
-:m =next [ t' opNext ] literal call ;m
+:m =>r [ t' >r ] literal t2/ ;m
+:m =next [ t' opNext ] literal t2/ ;m
 
 a: r>
   ++sp
@@ -489,6 +480,8 @@ a: rp! ( u -- , R: ??? --- ??? : set return stack depth )
   decSp branch
   (a);
 
+\ VM+primitives are less than 350 bytes!
+there t2/ negate primitive t! \ Forth code after this
 \ --- ---- ---- ---- no more direct assembly ---- ---- ---- --- 
 
 assembler.1 -order
@@ -518,7 +511,7 @@ assembler.1 -order
 :to dup dup ; ( u -- u u )
 :to drop drop ; ( u -- )
 :to swap swap ; ( u1 u2 -- u2 u1 )
-:to execute execute ; ( xt -- )
+: execute 2/ >r ; ( xt -- )
 : + um+ drop ; ( n n -- n )
 : 1- #-1 + ; ( n -- n )
 : 1+ #1 + ; ( n -- n )
@@ -754,7 +747,7 @@ hvar #h          ( -- a : dictionary pointer )
   2drop #0 r> #0 ;
 : find last (find) rot drop ;  ( "name" -- b )
 : literal state @ if =push lit , , then ; immediate ( u -- )
-: compile, 2/ align C000 lit or , ; ( xt -- )
+: compile, 2/ align , ; ( xt -- )
 :h ?found if exit then ( u f -- )
    space count type [char] ? emit cr -D lit throw ; 
 : interpret ( b -- )
@@ -791,7 +784,7 @@ hvar #h          ( -- a : dictionary pointer )
   bl word
   dup c@ 0= -A lit and throw
   count + #h ! align
-  =0iGET lit , =nest lit , ] BABE lit ;
+  ] BABE lit ;
 :to ; postpone [ 
    BABE lit <> -16 lit and throw 
    =unnest lit , ; immediate compile-only
@@ -820,8 +813,8 @@ hvar #h          ( -- a : dictionary pointer )
 :h ini hex postpone [ #0 >in ! #-1 dpl ! ; ( -- )
 : quit ( -- : interpreter loop [and more] )
   there t2/ <cold> t! \ program entry point set here
-  ." eForth 3.3" cr
-  ini 
+  ." eForth 3.3" cr 
+  ini
   begin
     query t' eval lit catch
     ( ?error -> ) ?dup if

@@ -48,6 +48,12 @@ architecture testing of tb is
 
 	signal configured: boolean := configure("tb.conf");
 begin
+	-- A more advanced test bench would hook the `rx`/`tx`
+	-- lines up to a UART which could be connected up to
+	-- stdin/stdout, or more realistically we could look
+	-- for a startup string from the CPU and halt the 
+	-- simulation when it has been received, or send
+	-- a command to halt the CPU which it has to process.
 	uut: entity work.top
 		generic map(
 			g          => g,
@@ -66,8 +72,7 @@ begin
 
 	clock_process: process
 		variable count: integer := 0;
-		variable ll: line;
-
+		variable aline: line;
 	begin
 		rst  <= '1';
 		stop <= false;
@@ -81,13 +86,13 @@ begin
 			count := count + 1;
 		end loop;
 		if halt = '1' then
-			write(ll, string'("{HALT}"));
+			write(aline, string'("{HALT}"));
 		else
-			write(ll, string'("{CYCLES}"));
+			write(aline, string'("{CYCLES}"));
 		end if;
 
 		if debug > 0 then
-			writeline(OUTPUT, ll);
+			writeline(OUTPUT, aline);
 		end if;
 
 		stop <= true;

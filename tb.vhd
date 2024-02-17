@@ -10,6 +10,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.util.all;
 use std.textio.all;
+use work.uart_pkg.all;
 
 entity tb is
 end tb;
@@ -17,19 +18,36 @@ end tb;
 architecture testing of tb is
 	constant g: common_generics           := default_settings;
 	constant clock_period:       time     := 1000 ms / g.clock_frequency;
-	constant baud:               positive := 115200 * 10; -- speed up TX/RX for simulation
+	constant baud:               positive := 115200;
 	shared variable clocks:      integer  := 10000;
 	shared variable forever:     integer  := 0;
 	shared variable debug:       integer  := 1;
+	shared variable interactive: integer  := 0;
+	shared variable report_uart: boolean  := false;
+	shared variable input_wait_for: time  := 15 ms;
 	constant N:                  positive := 16;
 
-	signal ld: std_ulogic_vector(7 downto 0) := (others => '0');
-	signal sw: std_ulogic_vector(7 downto 0) := x"AA";
 	signal stop:   boolean    := false;
 	signal clk:    std_ulogic := '0';
 	signal halt:   std_ulogic := '0';
 	signal rst:    std_ulogic := '1';
-	signal tx, rx: std_ulogic := '0';
+
+	signal saw_char: boolean := false;
+
+	signal ld: std_ulogic_vector(7 downto 0) := (others => '0');
+	signal sw: std_ulogic_vector(7 downto 0) := x"AA";
+
+	-- UART
+	signal tx:             std_ulogic := '0';
+	signal tx_fifo_full:   std_ulogic := '0';
+	signal tx_fifo_empty:  std_ulogic := '0';
+	signal tx_fifo_we:     std_ulogic := '0';
+	signal tx_fifo_data:   std_ulogic_vector(7 downto 0) := (others => '0');
+	signal rx:             std_ulogic := '0'; 
+	signal rx_fifo_full:   std_ulogic := '0'; 
+	signal rx_fifo_empty:  std_ulogic := '0'; 
+	signal rx_fifo_re:     std_ulogic := '0';
+	signal rx_fifo_data:   std_ulogic_vector(7 downto 0) := (others => '0');
 
 	impure function configure(the_file_name: in string) return boolean is
 		file     in_file: text is in the_file_name;
@@ -37,16 +55,17 @@ architecture testing of tb is
 		variable i:       integer;
 	begin
 		if endfile(in_file) then return false; end if;
-		readline(in_file, in_line); read(in_line, i);
-		clocks := i;
-		readline(in_file, in_line); read(in_line, i);
-		forever := i;
-		readline(in_file, in_line); read(in_line, i);
-		debug := i;
+		readline(in_file, in_line); read(in_line, i); clocks := i;
+		readline(in_file, in_line); read(in_line, i); forever := i;
+		readline(in_file, in_line); read(in_line, i); debug := i;
+		readline(in_file, in_line); read(in_line, i); interactive := i;
+		readline(in_file, in_line); read(in_line, i); report_uart := false; if (i > 0) then report_uart := true; end if;
+		readline(in_file, in_line); read(in_line, i); input_wait_for := i * 1 ms;
 		return true;
 	end function;
 
-	signal configured: boolean := configure("tb.conf");
+	signal testbench: boolean := configure("tb.conf");
+	signal configured: boolean := false;
 begin
 	-- A more advanced test bench would hook the `rx`/`tx`
 	-- lines up to a UART which could be connected up to
@@ -70,6 +89,42 @@ begin
 			tx   => tx,
 			rx   => rx);
 
+
+	uart_0_blk: block
+		signal uart_clock_rx_we, uart_clock_tx_we, uart_control_we: std_ulogic := '0';
+		signal uart_reg: std_ulogic_vector(15 downto 0);
+	begin
+		uart_0: work.uart_pkg.uart_top
+			generic map (
+				baud => baud, 
+				clock_frequency => g.clock_frequency, 
+				delay => 0 ns, 
+				asynchronous_reset => g.asynchronous_reset,
+				use_cfg => false,
+				fifo_depth => 4)
+			port map (
+				clk              =>  clk,
+				rst              =>  rst,
+
+				tx               =>  rx,
+				tx_fifo_full     =>  tx_fifo_full,
+				tx_fifo_empty    =>  tx_fifo_empty,
+				tx_fifo_we       =>  tx_fifo_we,
+				tx_fifo_data     =>  tx_fifo_data,
+
+				rx               =>  tx,
+				rx_fifo_full     =>  rx_fifo_full,
+				rx_fifo_empty    =>  rx_fifo_empty,
+				rx_fifo_re       =>  rx_fifo_re,
+				rx_fifo_data     =>  rx_fifo_data,
+
+				reg              =>  uart_reg,
+				clock_reg_tx_we  =>  uart_clock_tx_we,
+				clock_reg_rx_we  =>  uart_clock_rx_we,
+				control_reg_we   =>  uart_control_we
+			);
+	end block;
+
 	clock_process: process
 		variable count: integer := 0;
 		variable aline: line;
@@ -78,6 +133,9 @@ begin
 		stop <= false;
 		wait for clock_period;
 		rst  <= '0';
+		-- N.B. We could add clock jitter if we wanted, however we would
+		-- probably also want to add it to each of the modules clocks, along
+		-- with an adjustable delay.
 		while (count < clocks or forever /= 0)  and halt = '0' loop
 			clk <= '1';
 			wait for clock_period / 2;
@@ -96,15 +154,110 @@ begin
 		end if;
 
 		stop <= true;
+		report "Clock process end";
 		wait;
 	end process;
 
 	stimulus_process: process
 	begin
-		while stop = false loop
+		configured <= true;
+		while not stop loop
+			if rx_fifo_empty = '0' then saw_char <= true; end if;
 			wait for clock_period;
 		end loop;
+		if saw_char then
+			report "Saw character via UART";
+		else
+			report "No output from unit" severity warning;
+		end if;
+		report "Stimulus Process end";
 		wait;
 	end process;
+
+	output_process: process
+		variable oline: line;
+		variable c: character;
+		variable have_char: boolean := true;
+	begin
+		wait until configured;
+
+		if interactive < 1 then
+			report "Output process turned off (`interactive < 1`)";
+			wait;
+		end if;
+
+		report "Writing to STDOUT";
+		while not stop loop
+			wait until (rx_fifo_empty = '0' or stop);
+			if not stop then
+				wait for clock_period;
+				rx_fifo_re <= '1';
+				wait for clock_period;
+				rx_fifo_re <= '0';
+				c := character'val(to_integer(unsigned(rx_fifo_data)));
+				if (report_uart) then
+					report "UART RX CHAR: " & c;
+				end if;
+				write(oline, c);
+				have_char := true;
+				if rx_fifo_data = x"0d" then
+					writeline(output, oline);
+					have_char := false;
+				end if;
+			end if;
+		end loop;
+		if have_char then
+			writeline(output, oline);
+		end if;
+		report "Output process end";
+		wait;
+	end process;
+
+	-- The Input and Output mechanism that allows the tester to
+	-- interact with the running simulation needs more work, it is buggy
+	-- and experimental, but demonstrates the principle - that a VHDL
+	-- test bench can be interacted with at run time.
+	input_process: process
+		variable c: character := ' ';
+		variable iline: line;
+		-- variable oline: line;
+		variable good: boolean := true;
+		variable eoi:  boolean := false;
+	begin
+		tx_fifo_we <= '0';
+		tx_fifo_data <= x"00";
+		wait until configured;
+		if interactive < 2 then
+			report "Input process turned off (`interactive < 2`)";
+			wait;
+		end if;
+
+		report "Waiting for " & time'image(input_wait_for) & " (before reading from STDIN)";
+		wait for input_wait_for;
+		report "Reading from STDIN (Hit EOF/CTRL-D/CTRL-Z After entering a line)";
+		while (not endfile(input)) and not stop and eoi = false loop
+			report "Readline...";
+			readline(input, iline);
+			good := true;
+			while good and not stop loop
+				read(iline, c, good);
+				if good then
+					report "" & c;
+				else
+					report "EOL/EOI";
+					c   := LF;
+					eoi := true;
+				end if;
+				tx_fifo_data <= std_ulogic_vector(to_unsigned(character'pos(c), tx_fifo_data'length));
+				tx_fifo_we <= '1';
+				wait for clock_period;
+				tx_fifo_we <= '0';
+				wait for 100 us;
+			end loop;
+		end loop;
+		report "Input process end";
+		wait;
+	end process;
+
 end architecture;
 

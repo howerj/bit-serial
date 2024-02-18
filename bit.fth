@@ -238,23 +238,23 @@ label: start \ Forth VM entry point
   \ -- fall-through --
 label: vm ( The Forth virtual machine )
 assembler.1 +order
-  ip iLOAD-C
-  t iSTORE-C
-  one iADD
-  ip iSTORE-C
-  t iLOAD
+  ip iLOAD-C      \ load `ip`, or instruction pointer
+  t iSTORE-C      \ save a copy
+  one iADD        \ increment ptr to next instruction
+  ip iSTORE-C     \ `ip` points to the next instruction
+  t iLOAD         \ load current instruction
 primitive 2/ iADD \ subtract location (primitive is negated)
 high 2/ iAND      \ is high bit set?
   if              \ yes: must be instruction
-    t iLOAD
-    pc!
+    t iLOAD       \ load current instruction, again
+    pc!           \ jump to VM instruction
   then \ no: must be another Forth word to call
-  ++rp
-  ip iLOAD-C
-  {rp} iSTORE
-  t iLOAD
-  ip iSTORE-C
-  vm branch 
+  ++rp            \ increment return stack pointer
+  ip iLOAD-C      \ load location of next instruction
+  {rp} iSTORE     \ store return location
+  t iLOAD         \ load through current instruction pointer
+  ip iSTORE-C     \ store it `ip`, completing call
+  vm branch       \ and do it all again!
 assembler.1 -order
 
 :m a: ( "name" -- : assembly only routine, no header )
@@ -413,6 +413,9 @@ a: ! ( u a -- store a cell at a memory address )
   {sp} iLOAD
   t iSTORE
   --sp
+  (a); ( fall-through )
+a: drop ( u -- : drop it like it's hot )
+label: .drop
   {sp} iLOAD
   decSp branch
   (a);
@@ -422,11 +425,6 @@ a: dup ( u -- u u : duplicate item on top of stack )
   tos iLOAD-C
   {sp} iSTORE
   a;
-
-a: drop ( u -- : drop it like it's hot )
-  {sp} iLOAD
-  decSp branch
-  (a);
 
 a: swap ( u1 u2 -- u2 u1 : swap top two stack items )
   {sp} iLOAD
@@ -441,8 +439,7 @@ a: >r ( u -- , R: -- u )
   ++rp
   tos iLOAD-C
   {rp} iSTORE
-  {sp} iLOAD
-  decSp branch
+  .drop branch
   (a);
 
 :m for talign >r begin ;m
@@ -476,8 +473,7 @@ a: sp! ( ??? u -- ??? : set stack depth )
 a: rp! ( u -- , R: ??? --- ??? : set return stack depth )
   tos iLOAD-C
   {rp} iSTORE-C
-  {sp} iLOAD
-  decSp branch
+  .drop branch
   (a);
 
 \ VM+primitives are less than 350 bytes!
@@ -497,8 +493,10 @@ assembler.1 -order
 :m hconst :h tdrop (const) t, ;m   ( make headerless constant )
  0 hconst #0   ( -- 0 : space saving measure, push `0` )
 -1 hconst #-1  ( -- -1 : space saving measure, push `-1` )
+FF hconst #ff  ( -- 255 : space saving measure, push `255` )
 8002 hconst uctrl ( -- 8002 : uart control register )
 20 constant bl   ( -- space : push a space, 32 )
+ 2 constant cell ( -- u: size of memory cell in bytes )
 :m : :t ;m
 :m ; ;t ;m
 :to bye bye ; ( -- )
@@ -519,7 +517,7 @@ assembler.1 -order
 :h rp@ {rp} lit @ 1- ; ( -- u )
 : 0= if #0 exit then #-1 ; ( u -- f )
 : invert #-1 xor ; ( u -- u )
-:h lsb FF lit and ; ( u -- c : least significant byte )
+:h lsb #ff and ; ( u -- c : least significant byte )
 : emit ( ch -- )
   begin uctrl @ 1000 lit and 0= until
   lsb 2000 lit or uctrl ! ;
@@ -559,16 +557,15 @@ hvar #h          ( -- a : dictionary pointer )
 : > swap < ;            ( n n -- f : signed greater than )
 : 0> #0 > ;             ( n -- f : greater than zero )
 : u< 2dup 0>= swap 0>= xor >r < r> xor ; ( u u -- f : )
-: cell 2 lit ;          ( -- u : size of memory cell )
 : cell+ cell + ;    ( a -- a : increment address to next cell )
 : pick sp@ + 2* @ ;     ( ??? u -- ??? u u : )
 : aligned dup #1 and + ; ( b -- u : align a pointer )
 : align here aligned #h ! ; ( -- : align dictionary ptr )
 : depth {sp0} lit @ sp@ - 1- ; ( -- u : var stack depth )
-: c@ dup @ swap #1 and if FF lit lrs then lsb ;
+: c@ dup @ swap #1 and if #ff lrs then lsb ;
 : c! ( c b -- : store character at address )
   dup dup >r #1 and if
-    @ lsb swap FF lit lls
+    @ lsb swap #ff lls
   else
     @ FF00 lit and swap lsb
   then or r> ! ;
@@ -611,7 +608,7 @@ hvar #h          ( -- a : dictionary pointer )
     drop swap exit
   then 2drop drop #-1 dup ;
 : key begin key? until ; ( c -- : get a character from UART )
-: type begin dup while swap count emit swap 1- repeat 2drop ;
+: type 1- for count emit next drop ;
 : cmove for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;
 :h do$ r> r> 2* dup count + aligned 2/ >r swap >r ; ( -- a : )
 :h ($) do$ ;            ( -- a : do string NB. )

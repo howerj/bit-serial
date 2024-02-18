@@ -436,7 +436,7 @@ int main(int argc, char **argv) {
 		.bp1 = -1,
 		.sleep_every = CONFIG_BIT_SLEEP_EVERY_X_CYCLES,
 		.m = {
-#ifdef CONFIG_BIT_INCLUDE_DEFAULT_IMAGE
+#ifdef CONFIG_BIT_INCLUDE_DEFAULT_IMAGE /* should contain a Forth image */
 #include "bit.inc"
 #endif
 		},
@@ -444,7 +444,7 @@ int main(int argc, char **argv) {
 	b.in = stdin;
 	b.out = stdout;
 	b.err = stderr;
-	b.tron = !!getenv("TRACE");
+	b.tron = !!getenv("TRACE");  /* Lazy options; instead of `getopt` just use environment variables */
 	b.debug = !!getenv("DEBUG");
 	b.command = b.debug;
 	b.step = b.debug;
@@ -467,7 +467,7 @@ Environment Variables:\n\n\
 \tTRACE   - if set turn tracing on\n\
 \tDEBUG   - if set hit escape to enter debug mode ('h' lists commands)\n\
 \tBLOCK   - turn blocking input on (default is non-blocking)\n\
-\tDEFAULT - use built in default image\n\
+\tDEFAULT - use built in default image (run with no arguments)\n\
 \tWAKE    - turn sleeping every X cycles off\n\n";
 		(void)fprintf(stderr, fmt, argv[0]);
 		return 1;
@@ -484,12 +484,13 @@ Environment Variables:\n\n\
 				break;
 			b.m[i] = v;
 		}
+		if (fclose(in) < 0) return 3;
 	}
 	if (os_init(&b) < 0)
-		return 3;
-	const int r = bcpu(&b) < 0 ? 4 : 0;
+		return 4;
+	const int r = bcpu(&b) < 0 ? 5 : 0;
 	if (os_deinit(&b) < 0)
-		return 5;
+		return 6;
 	return r;
 }
 

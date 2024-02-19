@@ -30,9 +30,9 @@
 \ a system vocabulary, image checksum, optional components such 
 \ as floating points and memory allocation and lots of 
 \ documentation, a better decompiler, a "self-interpreter", a
-\ block editor and block system, sleep, more control words,
-\ better terminal handling, optional die on EOF, image options,
-\ and much more) and is self-hosting.
+\ block editor and block system, sleep, "create...does>", more 
+\ control words, better terminal handling, optional die on EOF, 
+\ image options, and much more) and is self-hosting.
 \
 \ The cross compiler has been tested and works with gforth 
 \ versions 0.7.0 and 0.7.3. An already compiled image (called 
@@ -285,6 +285,12 @@ label: .rdrop
   r> set-current CAFEBABE talign there ,
   does> @ thread, ;m
 
+:m :f
+  get-current >r target.1 set-current create
+  r> set-current talign there ,
+  does> @ thread,
+  ;m
+
 :m :t ( "name" -- : forth only routine )
   >in @ thead >in !
   get-current >r target.1 set-current create
@@ -486,7 +492,7 @@ assembler.1 -order
 :t 2* #1 lls ;t           ( u -- u : multiply by two )
 :t 2/ #1 lrs ;t           ( u -- u : divide by two )
 :h (var) r> 2* ;t         ( -- a : used in `variable` )
-:h (const) r> 2* @ ;t     ( -- u : used in `constant` )
+:h (const) r> :f v@ 2* @ ;t     ( -- u : used in `constant` )
 :m variable :t tdrop (var) 0 t, ;m ( meta-compiler `variable` )
 :m constant :t tdrop (const) t, ;m ( meta-compiler `constant` )
 :m hvar :h tdrop (var) 0 t, ;m     ( make headerless variable )
@@ -511,13 +517,18 @@ FF hconst #ff  ( -- 255 : space saving measure, push `255` )
 :to swap swap ; ( u1 u2 -- u2 u1 )
 : execute 2/ >r ; ( xt -- )
 : + um+ drop ; ( n n -- n )
-: 1- #-1 + ; ( n -- n )
-: 1+ #1 + ; ( n -- n )
-:h sp@ {sp} lit @ 1+ ; ( -- u )
-:h rp@ {rp} lit @ 1- ; ( -- u )
+:h sp@ {sp} lit @ :f 1+ #1 + ; ( -- u )
+:h rp@ {rp} lit @ :f 1- #-1 + ; ( -- u )
 : 0= if #0 exit then #-1 ; ( u -- f )
 : invert #-1 xor ; ( u -- u )
-:h lsb #ff and ; ( u -- c : least significant byte )
+:h bit #1 and ;
+: c@ dup @ swap bit if #ff lrs then :f lsb #ff and ;
+: c! ( c b -- : store character at address )
+  dup dup >r bit if
+    @ lsb swap #ff lls
+  else
+    @ FF00 lit and swap lsb
+  then or r> ! ;
 : emit ( ch -- )
   begin uctrl @ 1000 lit and 0= until
   lsb 2000 lit or uctrl ! ;
@@ -534,7 +545,7 @@ hvar #tib        ( -- a : terminal input buffer pointer )
 hvar #last       ( -- a : last defined word )
 hvar #h          ( -- a : dictionary pointer )
 : here #h @ ;    ( -- u )
-: hex  10 lit base ! ; ( -- : switch to hex I/O radix )
+: hex  10 lit :f base! base ! ; ( -- : hex I/O radix )
 : source TERMBUF lit #tib @ ; ( -- b u )
 : last #last @ ;   ( -- : last defined word )
 : ] #-1 state ! ;       ( -- : turn compile mode on )
@@ -546,7 +557,7 @@ hvar #h          ( -- a : dictionary pointer )
 : rot >r swap r> swap ; ( u1 u2 u3 -- u2 u3 u1 )
 : 2drop drop drop ;     ( u u -- : drop two numbers )
 : 2dup  over over ;     ( u1 u2 -- u1 u2 u1 u2 )
-: +! tuck @ + swap ! ;  ( n a -- : incr val at addr by `n` )
+: +! tuck @ + :f swap! swap ! ;  ( n a -- )
 : negate 1- invert ;    ( n -- n : negate [twos compliment] )
 : - negate + ;          ( u u -- u : subtract )
 : = xor 0= ;            ( u u -- f : equality )
@@ -558,17 +569,10 @@ hvar #h          ( -- a : dictionary pointer )
 : 0> #0 > ;             ( n -- f : greater than zero )
 : u< 2dup 0>= swap 0>= xor >r < r> xor ; ( u u -- f : )
 : cell+ cell + ;    ( a -- a : increment address to next cell )
-: pick sp@ + 2* @ ;     ( ??? u -- ??? u u : )
-: aligned dup #1 and + ; ( b -- u : align a pointer )
-: align here aligned #h ! ; ( -- : align dictionary ptr )
+: pick sp@ + v@ ;     ( ??? u -- ??? u u : )
+: aligned dup bit + ; ( b -- u : align a pointer )
+: align here aligned :f h! #h ! ; ( -- : align dictionary ptr )
 : depth {sp0} lit @ sp@ - 1- ; ( -- u : var stack depth )
-: c@ dup @ swap #1 and if #ff lrs then lsb ;
-: c! ( c b -- : store character at address )
-  dup dup >r #1 and if
-    @ lsb swap #ff lls
-  else
-    @ FF00 lit and swap lsb
-  then or r> ! ;
 : count dup 1+ swap c@ ; ( b -- b c )
 : allot aligned #h +! ; ( u -- )
 : , align here ! cell allot ; ( u -- )
@@ -596,7 +600,7 @@ hvar #h          ( -- a : dictionary pointer )
   #0 swap ( u1 0 u2 ) F lit
   for dup um+ >r >r dup um+ r> + r>
     if >r over um+ r> + then
-  next rot drop ;
+  next :f bury rot drop ;
 : um/mod ( ud u -- ur uq : unsigned double cell div/mod )
   ?dup 0= -A lit and throw 
   2dup u<
@@ -608,7 +612,8 @@ hvar #h          ( -- a : dictionary pointer )
     drop swap exit
   then 2drop drop #-1 dup ;
 : key begin key? until ; ( c -- : get a character from UART )
-: type 1- for count emit next drop ;
+: type begin dup while swap count emit swap 1- repeat 2drop ;
+\ : type 1- for count emit next drop ;
 : cmove for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;
 :h do$ r> r> 2* dup count + aligned 2/ >r swap >r ; ( -- a : )
 :h ($) do$ ;            ( -- a : do string NB. )
@@ -621,7 +626,7 @@ hvar #h          ( -- a : dictionary pointer )
   dup dup =cr lit <> >r  =lf lit <> r> and if \ Not End Line?
     dup =bksp lit <> >r =del lit <> r> and if \ Not Del Char?
       bl 
-      ( tap: ) 
+      :f tap
         dup emit over c! 1+ ( bot eot cur c -- bot eot cur )
       exit
     then
@@ -636,12 +641,10 @@ hvar #h          ( -- a : dictionary pointer )
   begin
     2dup xor
   while
-    key dup bl - 5F lit u< if 
-      ( tap: ) dup emit over c! 1+ 
-    else ktap then
+    key dup bl - 5F lit u< if tap else ktap then
   repeat drop over - ;
 : query ( -- : get line )
-   source drop =buf lit accept #tib ! drop #0 >in ! ; 
+   source drop =buf lit accept #tib ! drop #0 :f in! >in ! ; 
 :h ?depth depth > -4 lit and throw ; ( u -- )
 : -trailing ( b u -- b u : remove trailing spaces )
   for
@@ -655,10 +658,10 @@ hvar #h          ( -- a : dictionary pointer )
     dup
   while
     over c@ r@ - r@ bl = 4 lit pick execute
-    if rdrop rot drop exit then
+    if rdrop bury exit then
     +string
-  repeat rdrop rot drop ;
-:h no-match if 0> exit then 0= 0= ; ( c1 c2 -- t )
+  repeat rdrop bury ;
+:h no-match if 0> exit then :f 0<> 0= 0= ; ( c1 c2 -- t )
 :h match no-match invert ;          ( c1 c2 -- t )
 : parse ( c -- b u ; <string> )
   >r source drop >in @ + #tib @ >in @ - r@
@@ -668,12 +671,13 @@ hvar #h          ( -- a : dictionary pointer )
   r> t' match lit look swap r> - >r - r> 1+ 
   >in +!
   r> bl = if -trailing then #0 max ;
+:h base? base @ ;
 : spaces begin dup 0> while space 1- repeat drop ; ( +n -- )
 : hold #-1 hld +! hld @ c! ; ( c -- : save char to hold )
 : #> 2drop hld @ =tbufend lit over - ;  ( u -- b u )
 : #  ( d -- d : add next character in number to hold space )
    2 lit ?depth
-   #0 base @
+   #0 base?
    ( extract: ) 
      dup >r um/mod r> swap >r um/mod r> rot ( ud ud -- ud u )
    ( digit: ) 
@@ -687,7 +691,7 @@ hvar #h          ( -- a : dictionary pointer )
 : . dup >r abs #0 <# #s r> sign #> space type ;  ( n -- )
 : >number ( ud b u -- ud b u : convert string to number )
   begin
-    2dup >r >r drop c@ base @        ( get next character )
+    2dup >r >r drop c@ base?        ( get next character )
     ( digit? -> ) >r [char] 0 - 9 lit over <
     if 7 lit - dup A lit < or then dup r> u< ( c base -- u f )
     0= if                   ( d char )
@@ -695,36 +699,36 @@ hvar #h          ( -- a : dictionary pointer )
       r> r>                 ( restore string )
       exit                  ( ..exit )
     then                    ( d char )
-    swap base @ um* drop rot base @ um* 
+    swap base? um* drop rot base? um* 
     ( d+ -> ) >r swap >r um+ r> + r> + ( accumulate digit )
     r> r>                   ( restore string )
     +string dup 0=          ( advance string and test for end )
   until ;
 : number? ( a u -- d -1 | a u 0 : string to a number )
   #-1 dpl !
-  base @ >r
+  base? >r
   over c@ [char] - = dup >r if     +string then
   over c@ [char] $ =        if hex +string then
   >r >r #0 dup r> r>
   begin
     >number dup
   while over c@ [char] . xor
-    if rot drop rot r> 2drop #0 r> base ! exit then
+    if bury rot r> 2drop #0 r> base! exit then
     1- dpl ! 1+ dpl @
   repeat 
   2drop r> if 
     ( dnegate -> ) invert >r invert #1 um+ r> + 
-  then r> base ! #-1 ;
+  then r> base! #-1 ;
 : compare ( a1 u1 a2 u2 -- n : string equality )
   rot
-  over - ?dup if >r 2drop r> nip exit then
+  over - ?dup if nip :f nep nip nip exit then
   for ( a1 a2 )
     aft
       count rot count rot - ?dup
-      if rdrop nip nip exit then
+      if rdrop nep exit then
     then
   next 2drop #0 ;
-:to .s depth  for aft r@ pick . then next ;
+:to .s depth for aft r@ pick . then next ;
 :h nfa cell+ ; ( pwd -- nfa : move word ptr to name field )
 :h cfa nfa dup c@ 1F lit and + cell+ cell negate and ; 
 :h (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0 )
@@ -736,13 +740,13 @@ hvar #h          ( -- a : dictionary pointer )
     and r@ count compare 0=
     if ( found! )
       rdrop
-      dup ( immediate? -> ) nfa 40 lit swap @ and 0= 0=
+      dup ( immediate? -> ) nfa 40 lit swap @ and 0<>
       #1 or negate exit
     then
     nip dup @
   repeat
   2drop #0 r> #0 ;
-: find last (find) rot drop ;  ( "name" -- b )
+: find last (find) bury ;  ( "name" -- b )
 : literal state @ if =push lit , , then ; immediate ( u -- )
 : compile, 2/ align , ; ( xt -- )
 :h ?found if exit then ( u f -- )
@@ -780,34 +784,34 @@ hvar #h          ( -- a : dictionary pointer )
 :to : align here last , #last ! ( "name" -- )
   bl word
   dup c@ 0= -A lit and throw
-  count + #h ! align
-  ] BABE lit ;
+  count + h! align
+  ] :f babez BABE lit ;
 :to ; postpone [ 
-   BABE lit <> -16 lit and throw 
+   babez <> -16 lit and throw 
    =unnest lit , ; immediate compile-only
 :to begin align here ; immediate compile-only
-:to until =jumpz lit , 2/ , ; immediate compile-only
-:to again =jump  lit , 2/ , ; immediate compile-only
+:to until =jumpz lit :f j, , 2/ , ; immediate compile-only
+:to again =jump  lit j, ; immediate compile-only
 :to if =jumpz lit , here #0 , ; immediate compile-only
-:to then here 2/ swap ! ; immediate compile-only
+:to then here 2/ swap! ; immediate compile-only
 :to for =>r lit , here ; immediate compile-only
 :to next =next lit , 2/ , ; immediate compile-only
 :to ' bl word find ?found cfa literal ; immediate
-: compile r> dup 2* @ , 1+ >r ; compile-only
+: compile r> dup v@ , 1+ >r ; compile-only
 :to >r compile >r ; immediate compile-only
 :to r> compile r> ; immediate compile-only
 :to r@ compile r@ ; immediate compile-only 
 :to exit compile exit ; immediate compile-only
-:h pack word count + #h ! align ;
+:h pack word count + h! align ;
 :to ." compile .$  [char] " pack ; immediate compile-only
 :to $" compile ($) [char] " pack ; immediate compile-only
 :to ( [char] ) parse 2drop ; immediate
-:to \ source drop @ >in ! ; immediate
+:to \ source drop @ in! ; immediate
 :to immediate last nfa @ 40 lit or last nfa ! ;
 : dump 2/ for dup @ u. cell+ next drop ;
 : eval begin bl word dup c@ while 
    interpret #1 ?depth repeat drop ."  ok" cr ;
-:h ini hex postpone [ #0 >in ! #-1 dpl ! ; ( -- )
+:h ini hex postpone [ #0 in! #-1 dpl ! ; ( -- )
 : quit ( -- : interpreter loop [and more] )
   there t2/ <cold> t! \ program entry point set here
   ." eForth 3.3" cr 

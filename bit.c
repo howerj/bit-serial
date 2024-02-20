@@ -216,8 +216,7 @@ static inline void bstore(bcpu_t *b, mw_t addr, mw_t val) {
 	}
 	switch (addr & 0x7) {
 	case 0: b->leds = val; break;
-	case 1:
-		if (val & (1u << 13)) {
+	case 1: if (val & (1u << 13)) {
 			wrap_putch(b, val & 0xFFu);
 			fflush(b->out);
 		}
@@ -389,9 +388,7 @@ static inline int bcpu(bcpu_t *b) {
 		if (flg & (1u << fHLT))
 			goto halt;
 		if (flg & (1u << fR)) {
-			pc  = 0;
-			acc = 0;
-			flg = 0;
+			rsave(b, 0, 0, 0);
 			continue;
 		}
 

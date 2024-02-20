@@ -48,8 +48,8 @@ tb.o: tb.vhd bit.o peripherals.o top.o
 tb: tb.o bit.o peripherals.o top.o
 	ghdl -e $@
 
-tb.ghw: tb tb.conf bit.hex
-	ghdl -r $< --wave=$<.ghw --max-stack-alloc=16384 --ieee-asserts=disable
+tb.ghw: tb tb.cfg bit.hex
+	ghdl -r $< --wave=$<.ghw --unbuffered --max-stack-alloc=16384 --ieee-asserts=disable
 
 SOURCES = \
 	top.vhd \

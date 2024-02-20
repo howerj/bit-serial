@@ -196,13 +196,19 @@ meta.1 +order also definitions
 label: entry ( previous instructions are irrelevant )
 0 t,  \ entry point to virtual machine
 
+   \ Constants not variables
    0 tvar @0        \ must contain `0`
    1 tvar @1        \ must contain `1`
   10 tvar @16       \ must contain `16`
 8000 tvar high      \ must contain `8000`
 FFFF tvar set       \ all bits set, -1
-   0 tvar <cold>    \ entry point of virtual machine, set later
 
+  \ These variables, along with some defined in the Forth
+  \ code, need to be written to, hampering turning the
+  \ Forth interpreter into a Forth ROM. Instead, we could
+  \ use high memory locations for these variables instead,
+  \ if we need to ROM things.
+   0 tvar <cold>    \ entry point of virtual machine, set later
    0 tvar ip        \ instruction pointer
    0 tvar t         \ temporary register
    0 tvar tos       \ top of stack
@@ -452,7 +458,7 @@ a: >r ( u -- , R: -- u )
 :m =>r [ t' >r ] literal t2/ ;m
 :m =next [ t' opNext ] literal t2/ ;m
 
-a: r>
+a: r> ( If feels like this could be merged with `r@`... )
   ++sp
   tos iLOAD-C
   {sp} iSTORE
@@ -515,12 +521,15 @@ FF hconst #ff  ( -- 255 : space saving measure, push `255` )
 :to dup dup ; ( u -- u u )
 :to drop drop ; ( u -- )
 :to swap swap ; ( u1 u2 -- u2 u1 )
-: execute 2/ >r ; ( xt -- )
 : + um+ drop ; ( n n -- n )
 :h sp@ {sp} lit @ :f 1+ #1 + ; ( -- u )
 :h rp@ {rp} lit @ :f 1- #-1 + ; ( -- u )
-: 0= if #0 exit then #-1 ; ( u -- f )
+: execute 2/ >r ; ( xt -- )
 : invert #-1 xor ; ( u -- u )
+: negate 1- invert ; ( n -- n : negate [twos compliment] )
+: - negate + ;       ( u u -- u : subtract )
+\ :h sp! 2 lit - {sp} lit ! ;
+: 0= if #0 exit then #-1 ; ( u -- f )
 :h bit #1 and ;
 : c@ dup @ swap bit if #ff lrs then :f lsb #ff and ;
 : c! ( c b -- : store character at address )
@@ -558,8 +567,6 @@ hvar #h          ( -- a : dictionary pointer )
 : 2drop drop drop ;     ( u u -- : drop two numbers )
 : 2dup  over over ;     ( u1 u2 -- u1 u2 u1 u2 )
 : +! tuck @ + :f swap! swap ! ;  ( n a -- )
-: negate 1- invert ;    ( n -- n : negate [twos compliment] )
-: - negate + ;          ( u u -- u : subtract )
 : = xor 0= ;            ( u u -- f : equality )
 : <> = 0= ;             ( u u -- f : inequality )
 : 0>= 8000 lit and 0= ; ( n -- f : greater or equal to zero )
@@ -790,12 +797,12 @@ hvar #h          ( -- a : dictionary pointer )
    babez <> -16 lit and throw 
    =unnest lit , ; immediate compile-only
 :to begin align here ; immediate compile-only
-:to until =jumpz lit :f j, , 2/ , ; immediate compile-only
+:to until =jumpz lit :f j, , compile, ; immediate compile-only
 :to again =jump  lit j, ; immediate compile-only
 :to if =jumpz lit , here #0 , ; immediate compile-only
 :to then here 2/ swap! ; immediate compile-only
 :to for =>r lit , here ; immediate compile-only
-:to next =next lit , 2/ , ; immediate compile-only
+:to next =next lit , compile, ; immediate compile-only
 :to ' bl word find ?found cfa literal ; immediate
 : compile r> dup v@ , 1+ >r ; compile-only
 :to >r compile >r ; immediate compile-only

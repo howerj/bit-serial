@@ -19,12 +19,7 @@ architecture testing of tb is
 	constant g: common_generics           := default_settings;
 	constant clock_period:       time     := 1000 ms / g.clock_frequency;
 	constant baud:               positive := 115200;
-	shared variable clocks:      integer  := 10000;
-	shared variable forever:     integer  := 0;
-	shared variable debug:       integer  := 1;
-	shared variable interactive: integer  := 0;
-	shared variable report_uart: boolean  := false;
-	shared variable input_wait_for: time  := 15 ms;
+	constant configuration_file_name: string := "tb.cfg";
 	constant N:                  positive := 16;
 
 	signal stop:   boolean    := false;
@@ -49,22 +44,52 @@ architecture testing of tb is
 	signal rx_fifo_re:     std_ulogic := '0';
 	signal rx_fifo_data:   std_ulogic_vector(7 downto 0) := (others => '0');
 
-	impure function configure(the_file_name: in string) return boolean is
-		file     in_file: text is in the_file_name;
-		variable in_line: line;
-		variable i:       integer;
+	-- Test bench configurable options --
+
+	type configurable_items is record
+		clocks:         natural;
+		forever:        boolean;
+		debug:          natural;
+		interactive:    natural;
+		input_wait_for: time;
+		report_uart:    boolean;
+		report_number:  natural;
+		input_single_line: boolean;
+		uart_char_delay: time;
+	end record;
+
+	function set_configuration_items(ci: configuration_items) return configurable_items is
+		variable r: configurable_items;
 	begin
-		if endfile(in_file) then return false; end if;
-		readline(in_file, in_line); read(in_line, i); clocks := i;
-		readline(in_file, in_line); read(in_line, i); forever := i;
-		readline(in_file, in_line); read(in_line, i); debug := i;
-		readline(in_file, in_line); read(in_line, i); interactive := i;
-		readline(in_file, in_line); read(in_line, i); report_uart := false; if (i > 0) then report_uart := true; end if;
-		readline(in_file, in_line); read(in_line, i); input_wait_for := i * 1 ms;
-		return true;
+		r.clocks         := ci(0).value;
+		r.forever        := ci(1).value > 0;
+		r.debug          := ci(2).value;
+		r.interactive    := ci(3).value;
+		r.input_wait_for := ci(4).value * 1 ms;
+		r.report_uart    := ci(5).value > 0;
+		r.report_number  := ci(6).value;
+		r.input_single_line := ci(7).value > 0;
+		r.uart_char_delay := ci(8).value * 1 ms;
+		return r;
 	end function;
 
-	signal testbench: boolean := configure("tb.conf");
+	constant configuration_default: configuration_items(0 to 8) := (
+		(name => "Clocks..", value => 1000),
+		(name => "Forever.", value => 0),
+		(name => "Debug...", value => 0), -- TODO: Doesn't work for setting generics
+		(name => "Interact", value => 0),
+		(name => "InWaitMs", value => 15),
+		(name => "UartRep.", value => 0),
+		(name => "LogFor..", value => 256),
+		(name => "1Line...", value => 1),
+		(name => "UChDelay", value => 6)
+	);
+
+	-- Test bench configurable options --
+
+
+
+	shared variable cfg: configurable_items := set_configuration_items(configuration_default);
 	signal configured: boolean := false;
 begin
 	-- A more advanced test bench would hook the `rx`/`tx`
@@ -79,7 +104,7 @@ begin
 			file_name  => "bit.hex",
 			N          => N,
 			baud       => baud,
-			debug      => debug)
+			debug      => cfg.debug)
 		port map (
 			clk  => clk,
 --			rst  => rst,
@@ -129,14 +154,13 @@ begin
 		variable count: integer := 0;
 		variable aline: line;
 	begin
-		rst  <= '1';
 		stop <= false;
+		wait until configured;
 		wait for clock_period;
-		rst  <= '0';
 		-- N.B. We could add clock jitter if we wanted, however we would
 		-- probably also want to add it to each of the modules clocks, along
 		-- with an adjustable delay.
-		while (count < clocks or forever /= 0)  and halt = '0' loop
+		while (count < cfg.clocks or cfg.forever)  and halt = '0' loop
 			clk <= '1';
 			wait for clock_period / 2;
 			clk <= '0';
@@ -149,7 +173,7 @@ begin
 			write(aline, string'("{CYCLES}"));
 		end if;
 
-		if debug > 0 then
+		if cfg.debug > 0 then
 			writeline(OUTPUT, aline);
 		end if;
 
@@ -159,7 +183,18 @@ begin
 	end process;
 
 	stimulus_process: process
+		variable configuration_values: configuration_items(configuration_default'range) := configuration_default;
 	begin
+		-- write_configuration_tb(configuration_file_name, configuration_default);
+		read_configuration_tb(configuration_file_name, configuration_values);
+		cfg := set_configuration_items(configuration_values);
+		configured <= true;
+
+
+		rst <= '1';
+		wait for clock_period;
+		rst <= '0';
+
 		configured <= true;
 		while not stop loop
 			if rx_fifo_empty = '0' then saw_char <= true; end if;
@@ -181,7 +216,7 @@ begin
 	begin
 		wait until configured;
 
-		if interactive < 1 then
+		if cfg.interactive < 1 then
 			report "Output process turned off (`interactive < 1`)";
 			wait;
 		end if;
@@ -195,8 +230,8 @@ begin
 				wait for clock_period;
 				rx_fifo_re <= '0';
 				c := character'val(to_integer(unsigned(rx_fifo_data)));
-				if (report_uart) then
-					report "UART RX CHAR: " & c;
+				if (cfg.report_uart) then
+					report "UART RX CHAR: " & integer'image(to_integer(unsigned(rx_fifo_data))) & " CH: " & c;
 				end if;
 				write(oline, c);
 				have_char := true;
@@ -220,24 +255,25 @@ begin
 	input_process: process
 		variable c: character := ' ';
 		variable iline: line;
-		-- variable oline: line;
 		variable good: boolean := true;
 		variable eoi:  boolean := false;
 	begin
 		tx_fifo_we <= '0';
 		tx_fifo_data <= x"00";
 		wait until configured;
-		if interactive < 2 then
+
+		if cfg.interactive < 2 then
 			report "Input process turned off (`interactive < 2`)";
 			wait;
 		end if;
 
-		report "Waiting for " & time'image(input_wait_for) & " (before reading from STDIN)";
-		wait for input_wait_for;
+		report "Waiting for " & time'image(cfg.input_wait_for) & " (before reading from STDIN)";
+		wait for cfg.input_wait_for;
 		report "Reading from STDIN (Hit EOF/CTRL-D/CTRL-Z After entering a line)";
-		while (not endfile(input)) and not stop and eoi = false loop
-			report "Readline...";
-			readline(input, iline);
+		while stop = false and eoi = false loop
+			if endfile(input) = true then exit; end if;
+			report "INPUT-LINE> ";
+			readline(input, iline); -- TODO: Optional exit after single loop
 			good := true;
 			while good and not stop loop
 				read(iline, c, good);
@@ -252,12 +288,14 @@ begin
 				tx_fifo_we <= '1';
 				wait for clock_period;
 				tx_fifo_we <= '0';
-				wait for 100 us;
+				wait for cfg.uart_char_delay;
 			end loop;
+			if cfg.input_single_line then exit; end if;
 		end loop;
 		report "Input process end";
 		wait;
 	end process;
 
 end architecture;
+
 

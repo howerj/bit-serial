@@ -2,19 +2,29 @@
 
 *  Project:   Bit-Serial CPU in VHDL
 *  Author:    Richard James Howe
-*  Copyright: 2019,2020,2023 Richard James Howe
+*  Copyright: 2019-2020,2023-2024 Richard James Howe
 *  License:   MIT
 *  Email:     howe.r.j.89@gmail.com
 *  Website:   <https://github.com/howerj/bit-serial>
 
 *Processing data one bit at a time, since 2019*.
 
+# TLDR
+
+* [Soft-Core][] 16-bit Accumulator Based Bit-serial CPU for an [FPGA][].
+* The processor runs a programming language called [Forth][].
+* The core is *tiny* at just about 23 Slices / 76 LUTs.
+* The [VHDL][] testbench is (optionally) *interactive* (but **slow**).
+* The [VHDL][] testbench is configurable without recompilation (it reads from a
+  [configuration file][]).
+
 # Introduction
 
 This is a project for a [bit-serial CPU][], which is a CPU that has an architecture
 which processes a single bit at a time instead of in parallel like a normal
 CPU. This allows the CPU itself to be a lot smaller, the penalty is that it is
-*a lot* slower. The CPU itself is called *bcpu*.
+*a lot* slower. The CPU itself is called *bcpu*. The test program includes
+a fully working Forth interpreter.
 
 The CPU is incredibly basic, lacking features required to support
 higher level programming (such as function calls). Instead such features can
@@ -22,9 +32,35 @@ be emulated if they are needed. If such features are needed, or faster
 throughput is needed (whilst still remaining quite small) 
 other [Soft-Core][] CPUs are available, such as the [H2][].
 
-The CPU also lacks interrupts, traps, byte addressability and load/storing,
+The CPU also lacks interrupts, traps, byte addressability for load/storing,
 a Memory Management Unit or Memory Protection Unit, and a whole host of
 other features that are in a modern core.
+
+The core is *small* however, *very small*, here is the map report (edited
+to remove unneeded columns, this might not exactly match what is at the
+head of the project).
+
+	Max woosh/speed: 123.369MHz (can be improved with a few choice registers)
+
+	+-----------------------------------------------------------------------------------+
+	| Module                 | Slices* | Slice Reg | LUTs   | LUTRAM | BRAM/FIFO | BUFG |
+	+-----------------------------------------------------------------------------------+
+	| top/                   | 0/73    | 0/181     | 0/220  | 0/4    | 0/8       | 1/1  |
+	| +cpu                   | 23/23   | 55/55     | 76/76  | 4/4    | 0/0       | 0/0  |
+	| +peripheral            | 17/50   | 49/126    | 52/144 | 0/0    | 0/8       | 0/0  |
+	| ++bram                 | 0/0     | 0/0       | 0/0    | 0/0    | 8/8       | 0/0  |
+	| ++uart                 | 1/33    | 2/77      | 2/92   | 0/0    | 0/0       | 0/0  |
+	| +++uart_rx_gen.baud_rx | 9/9     | 21/21     | 25/25  | 0/0    | 0/0       | 0/0  |
+	| +++uart_rx_gen.rx_0    | 6/6     | 18/18     | 23/23  | 0/0    | 0/0       | 0/0  |
+	| +++uart_tx_gen.baud_tx | 10/10   | 21/21     | 25/25  | 0/0    | 0/0       | 0/0  |
+	| +++uart_tx_gen.tx_0    | 7/7     | 15/15     | 17/17  | 0/0    | 0/0       | 0/0  |
+	+-----------------------------------------------------------------------------------+
+	* Not of pizza
+        * No DSP48A1/PLL_ADV/DCM/BUFR/BUFIO used.
+
+Note that the UART (92 LUTs) is bigger than the CPU core (76 LUTs)! This
+is certainly one of the smallest soft microprocessors, and perhaps the
+smallest 16-bit processor.
 
 To build and run the C based simulator for the project, you will need a C
 compiler and 'make'. To build and run the [VHDL][] simulator, you will need [GHDL][]
@@ -54,7 +90,13 @@ The following 'make' targets are available:
 
 By default the [VHDL][] test bench is built and simulated in [GHDL][]. This
 requires [gforth][] to assemble the test program [bit.fth][] into a file
-readable by the simulator.
+readable by the simulator (or you can use the already assembled [bit.hex][]
+file). As mentioned, the VHDL testbench is optionally interactive, that
+is you can read input STDIN and output from the CPU (via a simulated UART)
+will be output to STDOUT. The options for this can be set in [tb.cfg][].
+On my machine is takes a few minutes to print out "eForth 3.3" (you will
+need to run the system for about 80 milliseconds just to be able to process
+a "bye" input from the user).
 
 	make run
 
@@ -169,12 +211,10 @@ of the CPU could be made, but in practice if you want a bit-parallel CPU
 you would not make a CPU with the same instruction set and behavior if the
 bit-serial restriction is lifted.
 
-The CPU has 16 operation, each instruction consists of a 4-bit operation field
-and a 12-bit operand. Depending on the CPU mode that operand can either be a 
-literal or an address to load a 16-bit word from (addresses are word and 
-not byte oriented, so the lowest bit of an address specifies the next word 
-not byte). Only the first 8 operations can have their operand indirected, 
-which is deliberate.
+The CPU has 16 operations, each instruction consists of a 4-bit operation field
+and a 12-bit operand. If the top bit of the 4-bit operand field is not set then
+an indirection is performed on the operand which is treated as an address to
+be loaded. Addresses are word (16-bit) oriented and not byte oriented.
 
 The CPU is an accumulator machine, all instructions either modify or use the
 accumulator to store operation results in them. The CPU has three registers
@@ -188,14 +228,14 @@ The instructions are:
 	| ----------- | ----------------------------- | ------------------------------ | -------------- |
 	| Instruction | C Operation                   | Description                    | Cycles         |
 	| ----------- | ----------------------------- | ------------------------------ | -------------- |
-	| OR          | acc |= lop                    | Bitwise Or                     | [3 or 5]*(N+1) |
-	| AND         | acc &= lop                    | Bitwise And                    | [3 or 5]*(N+1) |
-	| XOR         | acc ^= lop                    | Bitwise Exclusive Or           | [3 or 5]*(N+1) |
-	| ADD         | acc += lop                    | Add with carry, sets carry     | [3 or 5]*(N+1) |
-	| LSHIFT      | acc = acc << bits(lop)        | Shift left or Rotate left      | [3 or 5]*(N+1) |
-	| RSHIFT      | acc = acc >> bits(lop)        | Shift right or Rotate right    | [3 or 5]*(N+1) |
-	| LOAD        | acc = memory(lop)             | Load                           | [4 or 6]*(N+1) |
-	| STORE       | memory(lop) = acc             | Store                          | [4 or 6]*(N+1) |
+	| OR          | acc |= lop                    | Bitwise Or                     | 5*(N+1)        |
+	| AND         | acc &= lop                    | Bitwise And                    | 5*(N+1)        |
+	| XOR         | acc ^= lop                    | Bitwise Exclusive Or           | 5*(N+1)        |
+	| ADD         | acc += lop                    | Add with carry, sets carry     | 5*(N+1)        |
+	| LSHIFT      | acc = acc << bits(lop)        | Shift left or Rotate left      | 5*(N+1)        |
+	| RSHIFT      | acc = acc >> bits(lop)        | Shift right or Rotate right    | 5*(N+1)        |
+	| LOAD        | acc = memory(lop)             | Load                           | 6*(N+1)        |
+	| STORE       | memory(lop) = acc             | Store                          | 6*(N+1)        |
 	| LOADC       | acc = memory(op)              | Load from memory constant addr | 4*(N+1)        |
 	| STOREC      | memory(op) = acc              | Store to memory constant addr  | 4*(N+1)        |
 	| LITERAL     | acc = op                      | Load literal into accumulator  | 3*(N+1)        |
@@ -209,8 +249,7 @@ The instructions are:
 * pc     = program counter
 * acc    = accumulator
 * indir  = indirect flag
-* lop    = instruction operand if indirect flag not set, otherwise it is set to the memory
-           location pointed to by the operand
+* lop    = Load from operand, load the address specified by the operand
 * op     = instruction operand
 * flg    = flags register
 * N      = bit width, which is 16.
@@ -606,6 +645,8 @@ That's all folks!
 [bit.fth]: bit.fth
 [bit.hex]: bit.hex
 [bit.vhd]: bit.vhd
+[tb.cfg]: tb.cfg
+[configuration file]: tb.cfg
 [gforth]: https://gforth.org/
 [SUBLEQ]: https://en.wikipedia.org/wiki/One-instruction_set_computer#Subtract_and_branch_if_not_equal_to_zero
 

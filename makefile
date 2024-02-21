@@ -1,5 +1,6 @@
 CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -O3 -fwrapv
+GHDL=ghdl
 USB?=/dev/ttyUSB0
 BAUD?=115200
 DIFF?=vimdiff
@@ -35,7 +36,7 @@ bit: bit.c bit.inc
 	${CC} ${CFLAGS} $< -o $@
 
 %.o: %.vhd
-	ghdl -a -g $<
+	${GHDL} -a -g $<
 
 uart.o: uart.vhd util.o
 
@@ -46,10 +47,10 @@ top.o: top.vhd peripherals.o bit.o util.o uart.o
 tb.o: tb.vhd bit.o peripherals.o top.o
 
 tb: tb.o bit.o peripherals.o top.o
-	ghdl -e $@
+	${GHDL} -e $@
 
 tb.ghw: tb tb.cfg bit.hex
-	ghdl -r $< --wave=$<.ghw --unbuffered --max-stack-alloc=16384 --ieee-asserts=disable
+	${GHDL} -r $< --wave=$<.ghw --unbuffered --max-stack-alloc=16384 --ieee-asserts=disable
 
 SOURCES = \
 	top.vhd \

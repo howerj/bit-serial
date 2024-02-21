@@ -539,11 +539,11 @@ FF hconst #ff  ( -- 255 : space saving measure, push `255` )
     @ FF00 lit and swap lsb
   then or r> ! ;
 : emit ( ch -- )
-  begin uctrl @ 1000 lit and 0= until
-  lsb 2000 lit or uctrl ! ;
+  begin uctrl @ 1000 lit and 0= until ( wait until not full )
+  lsb 2000 lit or uctrl ! ; ( write char )
 : key? ( -- ch -1 | 0 )
-  uctrl @ 100 lit and if #0 exit then
-  400 lit uctrl ! uctrl @ lsb #-1 ;
+  uctrl @ 100 lit and if #0 exit then ( is empty? )
+  400 lit uctrl ! uctrl @ lsb #-1 ; ( read char )
 variable state   ( -- a : compile/interpret state variable )
 variable dpl     ( -- a : double cell parse variable )
 variable hld     ( -- a : hold space variable )
@@ -618,7 +618,7 @@ hvar #h          ( -- a : dictionary pointer )
     next
     drop swap exit
   then 2drop drop #-1 dup ;
-: key begin key? until ; ( c -- : get a character from UART )
+: key begin key? until ; ( -- c : get a character from UART )
 : type begin dup while swap count emit swap 1- repeat 2drop ;
 \ : type 1- for count emit next drop ;
 : cmove for aft >r dup c@ r@ c! 1+ r> 1+ then next 2drop ;
@@ -642,7 +642,7 @@ hvar #h          ( -- a : dictionary pointer )
     then
     r> +
     exit
-  then drop nip dup ;
+  then drop :f nips nip dup ;
 : accept ( b u -- b u : read in a line of user input )
   over + over
   begin
@@ -736,7 +736,7 @@ hvar #h          ( -- a : dictionary pointer )
     then
   next 2drop #0 ;
 :to .s depth for aft r@ pick . then next ;
-:h nfa cell+ ; ( pwd -- nfa : move word ptr to name field )
+:m nfa cell+ ;m ( pwd -- nfa : move word ptr to name field )
 :h cfa nfa dup c@ 1F lit and + cell+ cell negate and ; 
 :h (find) ( a wid -- PWD PWD 1|PWD PWD -1|0 a 0 )
   swap >r dup
@@ -750,7 +750,7 @@ hvar #h          ( -- a : dictionary pointer )
       dup ( immediate? -> ) nfa 40 lit swap @ and 0<>
       #1 or negate exit
     then
-    nip dup @
+    nips @
   repeat
   2drop #0 r> #0 ;
 : find last (find) bury ;  ( "name" -- b )

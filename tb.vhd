@@ -190,7 +190,6 @@ begin
 		cfg := set_configuration_items(configuration_values);
 		configured <= true;
 
-
 		rst <= '1';
 		wait for clock_period;
 		rst <= '0';
@@ -231,7 +230,7 @@ begin
 				rx_fifo_re <= '0';
 				c := character'val(to_integer(unsigned(rx_fifo_data)));
 				if (cfg.report_uart) then
-					report "UART RX CHAR: " & integer'image(to_integer(unsigned(rx_fifo_data))) & " CH: " & c;
+					report "BCPU -> UART CHAR: " & integer'image(to_integer(unsigned(rx_fifo_data))) & " CH: " & c;
 				end if;
 				write(oline, c);
 				have_char := true;
@@ -273,16 +272,25 @@ begin
 		while stop = false and eoi = false loop
 			if endfile(input) = true then exit; end if;
 			report "INPUT-LINE> ";
-			readline(input, iline); -- TODO: Optional exit after single loop
+			readline(input, iline);
 			good := true;
 			while good and not stop loop
 				read(iline, c, good);
 				if good then
-					report "" & c;
+					report "UART -> BCPU CHAR: " & integer'image(character'pos(c)) & " CH: " & c;
 				else
-					report "EOL/EOI";
-					c   := LF;
 					eoi := true;
+
+					report "UART -> BCPU EOL/EOI: CR";
+					c := CR;
+					tx_fifo_data <= std_ulogic_vector(to_unsigned(character'pos(c), tx_fifo_data'length));
+					tx_fifo_we <= '1';
+					wait for clock_period;
+					tx_fifo_we <= '0';
+					wait for cfg.uart_char_delay;
+					if stop then exit; end if;
+					report "UART -> BCPU EOL/EOI: LF";
+					c := LF;
 				end if;
 				tx_fifo_data <= std_ulogic_vector(to_unsigned(character'pos(c), tx_fifo_data'length));
 				tx_fifo_we <= '1';

@@ -17,6 +17,10 @@ use std.textio.all; -- for debug only, not needed for synthesis
 -- it is up to the BCPU). The three enable lines are mutually exclusive,
 -- only one will be active at any time.
 --
+-- The CPU should come with a working Forth image that demonstrates
+-- possibilities of the CPU, allowing the user to interactively program
+-- it.
+--
 -- There are a few configurable items, but the defaults should work fine.
 --
 -- Bit serial CPUs are quite slow, nonetheless there are quite a few
@@ -29,6 +33,17 @@ use std.textio.all; -- for debug only, not needed for synthesis
 -- LUTs, which would make the CPU FPGA family specific, see
 -- <https://www.fpgarelated.com/showarticle/797.php> or "Inside the 
 -- Spartan-6: Using LUTs to optimize circuits Victor Yurkovsky, June 24, 2015".
+--
+-- Other directions the CPU could be taken in are:
+--
+-- * Make the CPU more configurable. This could be done easily with
+-- a `std_ulogic_vector` generic to turn on/off instructions (for example).
+-- * Optionally process multiple bits at a time instead of just one
+-- bit (configurable with a generic). We could process any number of
+-- bits so long as it cleanly divided the CPU width.
+-- * Try to add new functionality without increasing the CPU size,
+-- such as a timer facility, or interrupts, or new instructions.
+--
 --
 entity bcpu is
 	generic (

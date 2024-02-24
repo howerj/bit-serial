@@ -262,6 +262,12 @@ high 2/ iAND      \ is high bit set?
   ip iSTORE-C     \ store it `ip`, completing call
   vm branch       \ and do it all again!
 assembler.1 -order
+\ Note that as the entire address space is unlikely to be
+\ used we could use some of the addresses high bits for
+\ extra instructions in the Forth VM, for example performing
+\ jumps instead of calls which would be useful to perform a
+\ tail call, merging exit and the last word call where 
+\ possible.
 
 :m a: ( "name" -- : assembly only routine, no header )
   CAFED00D

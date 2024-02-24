@@ -135,10 +135,13 @@ static int os_deinit(bcpu_t *b) {
 #else
 #ifdef _WIN32
 #include <windows.h>
+#include <io.h>
 extern int getch(void);
 extern int kbhit(void);
-static int os_getch(bcpu_t *b) { assert(b); return b->in == stdin ? getch() : fgetc(b->in); }
-static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return kbhit(); } /* WTF? */
+/*extern int _isatty(int fd);*/
+extern int _fileno(FILE *stream);
+static int os_getch(bcpu_t *b) { assert(b); return b->in == stdin && _isatty(_fileno(b->in)) ? getch() : fgetc(b->in); }
+static int os_kbhit(bcpu_t *b) { assert(b); Sleep(1); return _isatty(_fileno(b->in)) ? kbhit() : 1; } /* WTF? */
 static void os_sleep_ms(bcpu_t *b, unsigned ms) { assert(b); Sleep(ms); }
 static int os_init(bcpu_t *b) { assert(b); return 0; }
 static int os_deinit(bcpu_t *b) { assert(b); return 0; }

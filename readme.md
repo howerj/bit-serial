@@ -410,20 +410,20 @@ Defaults are: 8N1, no parity
 # Other Soft Microprocessors
 
 This is a *very* specialized core, that cannot be emphasized enough. It
-executes slowly, but is small. Other, larger core (but still relatively small)
+executes slowly, but is small. Other, larger cores (but still relatively small)
 may be useful for your needs. In terms of engineering trade offs this design
 takes things to the extreme in one direction only.
 
-The core should be written to be portable to different [FPGA][]s, however the
+The core should have be written to be portable to different [FPGA][]s, however the
 author only tests what they have available (Xilinx, Spartan-6).
 
 * The H2
 
 Another small core, based on the J1. This core executes quite quickly (1
-instruction per CPU cycle) and uses
-few resources, although much more than this core. The instruction set is quite
-dense and allows for higher level programming than just using straight
-assembler. See <https://github.com/howerj/forth-cpu>.
+instruction per CPU cycle) and uses few resources, although much more than 
+this core. The instruction set is quite dense and allows for higher level 
+programming than just using straight assembler. See 
+<https://github.com/howerj/forth-cpu>.
 
 This CPU core has deeper stacks, more instructions, and interrupts, which the
 original J1 core lacks. It is also written in VHDL instead of Verilog.
@@ -432,13 +432,12 @@ original J1 core lacks. It is also written in VHDL instead of Verilog.
 
 The One/Single Instruction Set Computer (OISC) based off of [SUBLEQ][] is another
 candidate for making a small, niche, CPU. There are many OISC architectures,
-[SUBLEQ][] is the most popular. Although I have not made a SUBLEQ CPU for
-an FPGA (it should be relatively straightforward to do so, and possible to
-make one in discrete 7400 series IC with some EEPROM and RAM chips) I have
-managed to port a Forth interpreter to a simulated 16-bit SUBLEQ CPU, see
-<https://github.com/howerj/subleq>. Other people have made SUBLEQ CPUs 
-on FPGAs (which are not compatible with that SUBLEQ eForth image as they use 
-the wrong width for the address and/or data lines).
+[SUBLEQ][] is the most popular. See <https://github.com/howerj/subleq-vhdl>
+for a fully working SUBLEQ CPU running on an FPGA that implements Forth, it has not 
+been optimized as much as this CPU but it is also quite small. The Forth it runs is
+a port of the one available here <https://github.com/howerj/subleq>. In
+principle it should be fairly easy to implement such a CPU in discrete 7400
+series Integrated Circuits.
 
 * Tiny CPU in a CPLD
 
@@ -489,19 +488,15 @@ operand are used.
 Missing are:
 
 * A Timer
-* A way to reset the CPU (perhaps JMPZ to 8XXX)
+* A way to reset the CPU (perhaps JMP to 0000)
 * A way to halt the CPU (perhaps JMP to 8XXX)
 
 Hopefully the instruction set would be smaller than this one
 and allow for a more compact Forth (indirect adding would allow 
-shorter stack increment routines so long as the carry was option was 
+shorter stack increment routines so long as the carry option was 
 disabled).
 
-Many features could be optionally enabled in the VHDL.
-
-Note that AND/XOR are not universal when combined, except if
-you have a source of truth and falsity, in which case you can
-use XOR to invert bits.
+Features could be optionally enabled in the VHDL as needed.
 
 # References / Appendix
 

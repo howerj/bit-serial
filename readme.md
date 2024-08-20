@@ -56,11 +56,13 @@ head of the project).
 	| +++uart_tx_gen.tx_0    | 7/7     | 15/15     | 17/17  | 0/0    | 0/0       | 0/0  |
 	+-----------------------------------------------------------------------------------+
 	* Not of pizza
-        * No DSP48A1/PLL_ADV/DCM/BUFR/BUFIO used.
+	* No DSP48A1/PLL_ADV/DCM/BUFR/BUFIO used.
 
 Note that the UART (92 LUTs) is bigger than the CPU core (76 LUTs)! This
 is certainly one of the smallest soft microprocessors, and perhaps the
-smallest 16-bit processor.
+smallest 16-bit soft processor for FPGAs. The UART is actually quite big
+as it is far more general than it needs to be, perhaps later developments
+will use a smaller one, like in my [SUBLEQ VHDL project](https://github.com/howerj/subleq-vhdl).
 
 To build and run the C based simulator for the project, you will need a C
 compiler and 'make'. To build and run the [VHDL][] simulator, you will need [GHDL][]
@@ -110,7 +112,7 @@ This builds the project for the [FPGA][].
 	make upload
 
 This uploads the project to the [Nexys 3][] board. This requires that
-'djtgcfg' is installed, which is a tool provided by [Digilent][].
+'djtgcfg' (bless you) is installed, which is a tool provided by [Digilent][].
 
 	make documentation
 
@@ -137,10 +139,10 @@ hitting return.
 
 	$ make run
 	./bit bit.hex
-	eForth 3.1
+	eForth 3.3
 	words
 
-Arithmetic in Forth in done using Reverse Polish Notation:
+Arithmetic in Forth is done using Reverse Polish Notation:
 
 	2 2 + . cr
 
@@ -169,7 +171,9 @@ either because only part of the BRAM module is being used or because it is not
 needed entirely. Adding a new CPU however is a bigger decision than using spare
 BRAM capacity, it can take up quite a lot of floor space, and perhaps other
 precious resources. If this is the case then adding this CPU costs practically
-nothing in terms of floor space, the main cost will be in development time.
+nothing in terms of floor space (or routing resources for connecting the device
+to other sections of the FPGA as the CPU interface is really tiny), the main cost 
+will be in development time.
 
 In short, the project may be useful if:
 
@@ -324,7 +328,7 @@ peripherals.
 	| 0x4004  | UART Control*  |
 	| ------- | -------------- |
 	These registers are turned off by default
-	and will need to be enabled during synthesis.
+	and will need to be enabled during synthesis if needed.
 
 * LED/Switches
 

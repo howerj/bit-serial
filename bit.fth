@@ -500,6 +500,8 @@ there t2/ negate primitive t! \ Forth code after this
 
 assembler.1 -order
 
+:m : :t ;m
+:m ; ;t ;m
 :h #1 1 lit ;t ( --  1 : push  1 onto variable stack )
 :t 2* #1 lls ;t           ( u -- u : multiply by two )
 :t 2/ #1 lrs ;t           ( u -- u : divide by two )
@@ -515,8 +517,6 @@ FF hconst #ff  ( -- 255 : space saving measure, push `255` )
 8002 hconst uctrl ( -- 8002 : uart control register )
 20 constant bl   ( -- space : push a space, 32 )
  2 constant cell ( -- u: size of memory cell in bytes )
-:m : :t ;m
-:m ; ;t ;m
 :to bye bye ; ( -- )
 :to and and ; ( u u -- u )
 :to or or ; ( u u -- u )

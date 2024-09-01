@@ -446,8 +446,8 @@ begin
 					f.op     <=     "0" & c.op(c.op'high downto 1) after delay;
 					f.choice <= STORE after delay;
 				when iLITERAL =>
-					f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
-					f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
+					--f.acc  <= c.op(0) & c.acc(c.acc'high downto 1) after delay;
+					--f.op   <=     "0" & c.op (c.op'high downto 1)  after delay;
 				when iUNUSED =>
 				-- We could use this if we need to extend the instruction set
 				-- for any reason. I cannot think of a good one that justifies the
@@ -489,16 +489,16 @@ begin
 						f.pc     <= c.acc(0) & c.pc(c.pc'high downto 1) after delay;
 						f.tcarry <= '0' after delay;
 					else
-						f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
+						--f.flags  <= c.acc(0) & c.flags(c.flags'high downto 1) after delay;
 					end if;
 					f.acc    <= c.acc(0) & c.acc(c.acc'high downto 1) after delay;
 				when iGET =>
 					if c.op(0) = '0' then
-						f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
-						f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1)   after delay;
+					--	f.acc    <= c.pc(0) & c.acc(c.acc'high downto 1) after delay;
+					--	f.pc     <= c.pc(0) & c.pc(c.pc'high downto 1)   after delay;
 					else
-						f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1)     after delay;
-						f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
+						--f.acc    <= c.flags(0) & c.acc(c.acc'high downto 1)     after delay;
+						--f.flags  <= c.flags(0) & c.flags(c.flags'high downto 1) after delay;
 					end if;
 				end case;
 			end if;
